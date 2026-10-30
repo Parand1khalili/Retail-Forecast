@@ -1,0 +1,39 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Locally installed libraries
+analysis/deps/
+analysis/model_deps/
+
+# Generated analysis and forecasts
+outputs/
+analysis/*.npz
+analysis/*profile.json
+
+# Data and confidential files
+*.xls
+*.xlsx
+*.xlsb
+*.csv
+*.parquet
+*.npz
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Temporary files
+*.log
+*.tmp
+
+# Local dependency wheels
+analysis/wheels/
+forecast_review.zip
+analysis/*.json
+analysis/*.png

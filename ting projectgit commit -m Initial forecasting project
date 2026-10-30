@@ -1,0 +1,60 @@
+ .gitignore                                         |   33 [32m+[m
+ analysis/Master Mast- Aug' 25_structure.json       | 2934 [32m++++++++++++[m
+ ...vot Table with sub brand -Aug'26_structure.json | 1007 [32m++++[m
+ analysis/audit_panel.py                            |   83 [32m+[m
+ analysis/audit_summary.json                        |  265 [32m++[m
+ analysis/check_secondary.py                        |   38 [32m+[m
+ analysis/deck_text.json                            |  493 [32m++[m
+ analysis/inspect_sources.py                        |   52 [32m+[m
+ analysis/inspect_xlsb.py                           |   19 [32m+[m
+ analysis/new sku_structure.json                    |   44 [32m+[m
+ analysis/profile_xlsx.py                           |   73 [32m+[m
+ analysis/ra_period-15.png                          |  Bin [31m0[m -> [32m100989[m bytes
+ analysis/ra_period-16.png                          |  Bin [31m0[m -> [32m305706[m bytes
+ analysis/ra_period-17.png                          |  Bin [31m0[m -> [32m321080[m bytes
+ analysis/ra_price-28.png                           |  Bin [31m0[m -> [32m177739[m bytes
+ analysis/ra_training_text.json                     |  134 [32m+[m
+ analysis/raw_metrics_sample.json                   |  765 [32m+++[m
+ analysis/read_methodology.py                       |   16 [32m+[m
+ analysis/read_ra_training.py                       |   12 [32m+[m
+ analysis/sample_raw_metrics.py                     |   16 [32m+[m
+ analysis/secondary_checks.json                     |   32 [32m+[m
+ analysis/unpack_model_deps.py                      |    9 [32m+[m
+ .../catboost-1.2.10-cp312-cp312-win_amd64.whl      |  Bin [31m0[m -> [32m100214655[m bytes
+ analysis/wheels/cloudpickle-3.1.2-py3-none-any.whl |  Bin [31m0[m -> [32m22228[m bytes
+ analysis/wheels/graphviz-0.21-py3-none-any.whl     |  Bin [31m0[m -> [32m47300[m bytes
+ analysis/wheels/joblib-1.6.0-py3-none-any.whl      |  Bin [31m0[m -> [32m306115[m bytes
+ analysis/wheels/narwhals-2.27.1-py3-none-any.whl   |  Bin [31m0[m -> [32m483211[m bytes
+ .../scikit_learn-1.9.1-cp312-cp312-win_amd64.whl   |  Bin [31m0[m -> [32m8262238[m bytes
+ .../wheels/scipy-1.18.1-cp312-cp312-win_amd64.whl  |  Bin [31m0[m -> [32m36658278[m bytes
+ analysis/wheels/six-1.17.0-py2.py3-none-any.whl    |  Bin [31m0[m -> [32m11050[m bytes
+ .../wheels/threadpoolctl-3.7.0-py3-none-any.whl    |  Bin [31m0[m -> [32m26362[m bytes
+ analysis/xlsb_structure.json                       | 4934 [32m++++++++++++++++++++[m
+ forecast_review.zip                                |  Bin [31m0[m -> [32m80575[m bytes
+ forecasting/APP_README_FA.md                       |   23 [32m+[m
+ forecasting/LIGHT_METHOD_FA.md                     |   46 [32m+[m
+ forecasting/README.md                              |   30 [32m+[m
+ forecasting/app.py                                 |   92 [32m+[m
+ forecasting/app_core.py                            |  284 [32m++[m
+ forecasting/app_ui.html                            |   53 [32m+[m
+ forecasting/auto_engine.py                         |  323 [32m++[m
+ forecasting/backtest.py                            |  286 [32m++[m
+ forecasting/build_results.mjs                      |  137 [32m+[m
+ forecasting/check_app.py                           |   37 [32m+[m
+ forecasting/check_automatic.py                     |   45 [32m+[m
+ forecasting/check_light.py                         |   19 [32m+[m
+ forecasting/check_schema.py                        |   29 [32m+[m
+ forecasting/check_ui.mjs                           |    8 [32m+[m
+ forecasting/diagnose_selection.py                  |   30 [32m+[m
+ forecasting/freeze_future_forecasts.py             |   31 [32m+[m
+ forecasting/historical_study.py                    |  128 [32m+[m
+ forecasting/light_benchmark.py                     |  131 [32m+[m
+ forecasting/make_schema_fixtures.mjs               |   20 [32m+[m
+ forecasting/requirements.txt                       |    3 [32m+[m
+ forecasting/schema.py                              |  123 [32m+[m
+ forecasting/verify_results.py                      |   41 [32m+[m
+ forecasting/warm_app.py                            |   13 [32m+[m
+ forecasting/write_model_report.py                  |   53 [32m+[m
+ run_forecast.cmd                                   |    2 [32m+[m
+ run_forecast.ps1                                   |   23 [32m+[m
+ 59 files changed, 12969 insertions(+)
