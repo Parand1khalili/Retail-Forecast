@@ -11,6 +11,7 @@ from app_core import Dataset,baseline,DIMS,ROOT
 sys.path.insert(0,str(ROOT/'analysis/model_deps'))
 from catboost import CatBoostRegressor
 from backtest import FeatureBuilder
+from light_benchmark import candidates as light_candidates
 
 OUT=ROOT/'outputs/automatic_models'
 OUT.mkdir(parents=True,exist_ok=True)
@@ -19,6 +20,7 @@ PARAMS=dict(iterations=180,depth=5,learning_rate=.06,l2_leaf_reg=10,
             allow_writing_files=False,has_time=True,one_hot_max_size=32)
 VERSION='global-v1'
 SELECTION_VERSION='robust-price-volume-v3'
+POLICY_VERSION='shared-origin-city-segment-v1'
 
 def emit(*args):print(*args,flush=True)
 
@@ -157,6 +159,14 @@ def base_candidates(d,metric,cutoff):
                 for vm in ['Last month','Mean 2']:
                     v=baseline(d.volume[:,:cutoff+1],vm,1)
                     out[f'price-trend|{w}|{damping}|{vm}']=np.stack([v*last*growth**(h*damping) for h in [1,2,3]],axis=1)
+    # Include the dependency-light benchmark in the SAME candidate grid, with
+    # identical origins and forecast horizons as the CatBoost recipes.
+    if cutoff>=11:
+        for h in [1,2,3]:
+            for name,pred in light_candidates(d.volume[:,:cutoff+1],d.value[:,:cutoff+1],metric,h).items():
+                key=f'light|{name}'
+                if key not in out:out[key]=np.zeros((len(d.meta),3))
+                out[key][:,h-1]=pred
     return out
 
 def candidates(d,metric,cutoff):
@@ -173,9 +183,6 @@ def candidates(d,metric,cutoff):
                 for vm in ['Last month','Mean 2']:
                     v=baseline(d.volume[:,:cutoff+1],vm,1)
                     out[f'price-volume|{vm}|{window}']=volumes['price']*v[:,None]
-    if metric=='value_1000_toman':
-        guarded,_=guarded_money(d,cutoff)
-        if guarded is not None:out={name:guarded for name in out}
     return out
 
 def group(y,meta,level):
@@ -188,41 +195,62 @@ def scores(y,p):
     den=y.sum()
     return {'wape':float(abs(y-p).sum()/den) if den else None,'bias':float((p-y).sum()/den) if den else None,'actual':float(den)}
 
+def select_recipes(d,metric,origins,by_origin):
+    """Compare every candidate on the same completed targets and city cells.
+
+    Models are trained only through their respective origin by candidates().
+    WAPE uses pooled absolute errors (not average per-origin percentages).
+    Blends use the best simple method on these same validation targets.
+    """
+    if not origins:raise ValueError('At least one completed validation origin is required.')
+    common=set.intersection(*(set(by_origin[o]) for o in origins))
+    # Exclude invalid candidate recipes entirely, rather than letting NaN win.
+    common={name for name in common if all(np.isfinite(by_origin[o][name]).all() and
+                                        (by_origin[o][name]>=0).all() for o in origins)}
+    if not common:raise ValueError('No finite, nonnegative common candidates across validation origins.')
+    policy={};validation=[];truth=d.metric(metric)
+    for h in [1,2,3]:
+        if any(o+h>=len(d.months) for o in origins):
+            raise ValueError('Validation target extends beyond available observations.')
+        actual=np.concatenate([group(truth[:,o+h:o+h+1],d.meta,'city_segment') for o in origins],axis=1)
+        pp={name:np.concatenate([group(by_origin[o][name][:,h-1:h],d.meta,'city_segment') for o in origins],axis=1)
+            for name in sorted(common)}
+        simple=[name for name in pp if name.startswith(('base|','light|','price-trend|'))]
+        if not simple:raise ValueError('No non-ML reference available for selection.')
+        bestbase=min(simple,key=lambda name:np.abs(pp[name]-actual).sum())
+        recipes={name:{'components':[[name,1.]]} for name in pp}
+        for name in list(pp):
+            if not name.startswith(('ml|','price-volume|')):continue
+            for weight in [.25,.5,.75]:
+                blend=f'blend|{name}|{weight}'
+                pp[blend]=weight*pp[name]+(1-weight)*pp[bestbase]
+                recipes[blend]={'components':[[name,weight],[bestbase,1-weight]]}
+        for name,pred in pp.items():
+            validation.append({'metric':metric,'horizon':h,'model':name,**scores(actual,pred)})
+        winner=min(pp,key=lambda name:np.abs(pp[name]-actual).sum())
+        policy[str(h)]={**recipes[winner],'name':winner,
+                        'validation_wape':scores(actual,pp[winner])['wape'],
+                        'validation_origins':[d.months[o] for o in origins],
+                        'comparison_grain':'city_segment',
+                        'comparison_metric':'pooled WAPE'}
+    return policy,validation
+
 def study():
     d=Dataset.builtin();dates=pd.PeriodIndex(d.months,freq='M')
     origins=[dates.get_loc(pd.Period(s)) for s in ['2025-05','2025-09','2026-02']]
     final=dates.get_loc(pd.Period('2026-05'))
-    # Record the candidate grid and split. The price guard is a subsequent
-    # regression fix; the note below explicitly records reuse of the test dates.
-    plan={'version':VERSION,'selection_version':SELECTION_VERSION,'selection_origins':[d.months[o] for o in origins],
+    plan={'version':VERSION,'selection_version':POLICY_VERSION,'selection_origins':[d.months[o] for o in origins],
           'selection_target_end':'2026-05','test_origin':'2026-05','test_targets':['2026-06','2026-07','2026-08'],
-          'primary_metric':'city_segment WAPE','training_windows':[24,'all'],'model_parameters':PARAMS,
-          'models':['raw residual CatBoost','scaled residual CatBoost','log ratio CatBoost','price-volume CatBoost','statistical baselines','fixed-weight blends'],
+          'primary_metric':'pooled city_segment WAPE','training_windows':[24,'all'],'model_parameters':PARAMS,
+          'models':['CatBoost residual and price-volume','statistical baselines','lightweight benchmarks','fixed-weight blends'],
           'price_shift_guard':price_shift_guard(d,final),
           'note':'Retrospective current-taxonomy regression audit. Guard added after diagnosing an unstable price extrapolation; final dates were already examined, so this is NOT an untouched test. Prospective confirmation is still needed.'}
     (OUT/'plan.json').write_text(json.dumps(plan,indent=2),encoding='utf-8')
     selected={};validation=[];later=[]
     for metric in ['volume_kg','value_1000_toman']:
         vals={o:candidates(d,metric,o) for o in origins}
-        common=set.intersection(*(set(p) for p in vals.values()))
-        selected[metric]={}
-        for h in [1,2,3]:
-            actual=np.concatenate([d.metric(metric)[:,o+h:o+h+1] for o in origins],axis=1)
-            pp={name:np.concatenate([vals[o][name][:,h-1:h] for o in origins],axis=1) for name in sorted(common)}
-            baseline_names=[n for n in pp if not n.startswith(('ml|','price-volume|'))]
-            bestbase=min(baseline_names,key=lambda n:np.abs(pp[n]-actual).sum())
-            recipes={name:{'components':[[name,1.]]} for name in pp}
-            for name in list(pp):
-                if not name.startswith(('ml|','price-volume|')):continue
-                for weight in [.25,.5,.75]:
-                    blend=f'blend|{name}|{weight}'
-                    pp[blend]=weight*pp[name]+(1-weight)*pp[bestbase]
-                    recipes[blend]={'components':[[name,weight],[bestbase,1-weight]]}
-            for name,pred in pp.items():
-                validation.append({'metric':metric,'horizon':h,'model':name,**scores(actual,pred)})
-            winner=min(pp,key=lambda n:np.abs(pp[n]-actual).sum())
-            selected[metric][str(h)]={**recipes[winner],'name':winner,'validation_wape':scores(actual,pp[winner])['wape']}
-        # Lock recipes before fitting and scoring final targets.
+        selected[metric],records=select_recipes(d,metric,origins,vals)
+        validation.extend(records)
         (OUT/'policy.json').write_text(json.dumps(selected,indent=2),encoding='utf-8')
         final_preds=candidates(d,metric,final)
         chosen=np.column_stack([sum(weight*final_preds[name][:,h-1] for name,weight in selected[metric][str(h)]['components']) for h in [1,2,3]])
@@ -239,7 +267,7 @@ def study():
 
 def forecast_component(d,metric,cutoff,name):
     parts=name.split('|')
-    if parts[0] in ['base','price-trend']:return base_candidates(d,metric,cutoff)[name]
+    if parts[0] in ['base','light','price-trend']:return base_candidates(d,metric,cutoff)[name]
     window=int(parts[2]) if parts[2]!='all' else 'all'
     if parts[0]=='ml':return fit_models(d,metric,cutoff,window)[parts[1]]
     v=fit_models(d,'volume_kg',cutoff,window)
@@ -248,29 +276,15 @@ def forecast_component(d,metric,cutoff,name):
 
 def dataset_policy(d,metric,cutoff):
     """Re-select on completed targets of the supplied dataset, never future dates."""
-    digest=hashlib.sha256(VERSION.encode()+SELECTION_VERSION.encode()+metric.encode()+d.meta.tobytes()+d.volume[:,:cutoff+1].tobytes()+d.value[:,:cutoff+1].tobytes()).hexdigest()[:24]
+    digest=hashlib.sha256(VERSION.encode()+POLICY_VERSION.encode()+metric.encode()+d.meta.tobytes()+d.volume[:,:cutoff+1].tobytes()+d.value[:,:cutoff+1].tobytes()).hexdigest()[:24]
     cached=OUT/'runtime_policies'/f'{digest}.json';cached.parent.mkdir(exist_ok=True)
     if cached.exists():return json.loads(cached.read_text(encoding='utf-8'))
-    origins=[o for o in [cutoff-6,cutoff-3] if o>=5]
+    # All 3 targets for each origin must be known at the selection cutoff.
+    origins=[o for o in [cutoff-6,cutoff-3] if o>=11]
     vals={o:candidates(d,metric,o) for o in origins}
-    common=set.intersection(*(set(p) for p in vals.values()))
-    policy={}
-    for h in [1,2,3]:
-        actual=np.concatenate([d.metric(metric)[:,o+h:o+h+1] for o in origins],axis=1)
-        pp={name:np.concatenate([vals[o][name][:,h-1:h] for o in origins],axis=1) for name in sorted(common)}
-        basic=[name for name in pp if not name.startswith(('ml|','price-volume|'))]
-        bestbase=min(basic,key=lambda name:np.abs(pp[name]-actual).sum())
-        recipes={name:{'components':[[name,1.]]} for name in pp}
-        for name in list(pp):
-            if not name.startswith(('ml|','price-volume|')):continue
-            for weight in [.25,.5,.75]:
-                blend=f'blend|{name}|{weight}'
-                pp[blend]=weight*pp[name]+(1-weight)*pp[bestbase]
-                recipes[blend]={'components':[[name,weight],[bestbase,1-weight]]}
-        winner=min(pp,key=lambda name:np.abs(pp[name]-actual).sum())
-        policy[str(h)]={**recipes[winner],'name':winner,'validation_wape':scores(actual,pp[winner])['wape'],
-                        'validation_origins':[d.months[o] for o in origins],
-                        'basis':'آموزش و انتخاب خودکار روی ماه‌های تکمیل‌شدهٔ همین فایل'}
+    policy,_=select_recipes(d,metric,origins,vals)
+    for row in policy.values():
+        row['basis']='انتخاب روی مبدأها و افق‌های یکسان؛ WAPE ترکیب شهر/محصول'
     cached.write_text(json.dumps(policy,ensure_ascii=False,indent=2),encoding='utf-8')
     return policy
 
@@ -303,9 +317,10 @@ def future_request(d,request):
     report=OUT/'results.json'
     if report.exists() and any(word in d.source.lower() for word in ['mast','yoghurt','ماست']):
         result=json.loads(report.read_text(encoding='utf-8'))
+        if result.get('plan',{}).get('selection_version')!=POLICY_VERSION:result={'test':[]}
         benchmark=next((r for r in result['test'] if r['metric']==metric and r['level']=='city_segment' and r['horizon']==horizon),None)
         ref=Dataset.builtin();reference_mask=ref.mask(request.get('filters',{}))
-        if reference_mask.any():
+        if reference_mask.any() and benchmark is not None:
             with np.load(OUT/(metric+'_final.npz')) as z:
                 actual=float(z['actual'][reference_mask,horizon-1].sum())
                 predicted=float(z['prediction'][reference_mask,horizon-1].sum())
