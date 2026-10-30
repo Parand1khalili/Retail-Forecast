@@ -212,9 +212,11 @@ def choose_method(dataset,metric,cutoff,window,horizon):
     Evaluation at city segment grain prevents a large national total from
     concealing wrong brand/city allocations.
     """
-    selection=json.loads((ROOT/'outputs/yoghurt_history_study/selection_locked.json').read_text(encoding='utf-8'))
+    record=ROOT/'outputs/yoghurt_history_study/selection_locked.json'
+    selection=json.loads(record.read_text(encoding='utf-8')) if record.is_file() else {}
     yogurt=any(word in dataset.source.lower() for word in ['mast','yoghurt','ماست'])
-    default=selection[metric][str(horizon)]['method'] if yogurt else ('Mean 2' if metric=='volume_kg' and horizon==1 else 'Last month')
+    default=selection.get(metric,{}).get(str(horizon),{}).get('method') if yogurt else None
+    if default is None:default='Mean 2' if metric=='volume_kg' and horizon==1 else 'Last month'
     candidates=[m for m in AVAILABLE_METHODS if m=='Last month' or
                 (m.startswith('Mean ') and window>=int(m.rsplit(' ',1)[1])) or
                 (m=='Exponential smoothing' and window>=2) or
