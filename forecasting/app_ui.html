@@ -48,7 +48,7 @@ function recipeComponent(name){
   const parts=String(name||'').split('|');
   const windows=w=>w==='all'?'تمام تاریخچه':/^\d+$/.test(w||'')?persian(Number(w))+' ماه':'';
   const kinds={raw:'تغییر مطلق فروش',scaled:'تغییر مقیاس‌بندی‌شده فروش',log:'تغییر لگاریتمی فروش'};
-  const light={last:'آخرین ماه',mean2:'میانگین ۲ ماه',mean3:'میانگین ۳ ماه',seasonal12:'ماه مشابه سال قبل',ses0.2:'هموارسازی نمایی ۰٫۲',ses0.5:'هموارسازی نمایی ۰٫۵',ses0.8:'هموارسازی نمایی ۰٫۸',croston_sba:'Croston-SBA',equal_blend:'ترکیب مساوی روش‌های سبک',price_volume_last:'حجم آخر × روند قیمت',price_volume_mean2:'میانگین حجم ۲ ماه × روند قیمت'};
+  const light={last:'آخرین ماه',mean2:'میانگین ۲ ماه',mean3:'میانگین ۳ ماه',seasonal12:'ماه مشابه سال قبل','ses0.2':'هموارسازی نمایی ۰٫۲','ses0.5':'هموارسازی نمایی ۰٫۵','ses0.8':'هموارسازی نمایی ۰٫۸',croston_sba:'Croston-SBA',equal_blend:'ترکیب مساوی روش‌های سبک',price_volume_last:'حجم آخر × روند قیمت',price_volume_mean2:'میانگین حجم ۲ ماه × روند قیمت'};
   if(parts[0]==='ml')return {label:'CatBoost — '+(kinds[parts[1]]||parts[1]),window:windows(parts[2])};
   if(parts[0]==='price-volume')return {label:'CatBoost قیمت × حجم ('+(kinds[parts[1]]||parts[1])+')',window:windows(parts[2])};
   if(parts[0]==='light')return {label:'مدل سبک — '+(light[parts[1]]||parts[1]),window:'تاریخچه تا ماه مبدأ'};
