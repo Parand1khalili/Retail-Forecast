@@ -40,12 +40,12 @@ def price_shift_guard(d,cutoff):
     volume=d.volume[:,:cutoff+1].sum(0);value=d.value[:,:cutoff+1].sum(0)
     p=np.divide(value,volume,out=np.full_like(value,np.nan),where=volume>0)
     changes=np.divide(p[1:],p[:-1],out=np.full(len(p)-1,np.nan),where=p[:-1]>0)-1
-    prior=changes[:-1][-24:];prior=prior[np.isfinite(prior)]
+    prior=changes[:-1][-(24//d.period_months):];prior=prior[np.isfinite(prior)]
     if len(prior)<8 or not np.isfinite(changes[-1]):return {'active':False}
     center=float(np.median(prior));mad=float(np.median(abs(prior-center)))
     limit=max(.05,3*1.4826*mad)
     return {'active':bool(abs(changes[-1]-center)>limit),'current_change':float(changes[-1]),
-            'median_prior_change':center,'deviation_limit':limit,'reference_months':len(prior),
+            'median_prior_change':center,'deviation_limit':limit,'reference_periods':len(prior),
             'rule':'absolute deviation from prior-24-month median > max(5 percentage points, 3 scaled MAD)'}
 
 def guarded_money(d,cutoff):
@@ -310,7 +310,7 @@ def dataset_policy(d,metric,cutoff):
     vals={o:candidates(d,metric,o) for o in origins}
     policy,_=select_recipes(d,metric,origins,vals)
     for row in policy.values():
-        row['basis']='انتخاب روی مبدأها و افق‌های یکسان؛ WAPE ترکیب شهر/محصول'
+        row['basis']='انتخاب روی مبدأها و افق‌های تاریخی یکسان؛ WAPE مکان و محصول در سطح مکانی انتخاب‌شده'
     cached.write_text(json.dumps(policy,ensure_ascii=False,indent=2),encoding='utf-8')
     return policy
 
@@ -362,6 +362,6 @@ def future_request(d,request):
             'selected_series_check':{'origins':0,'wape':None},'benchmark':benchmark,'selected_benchmark':selected_benchmark,
             'selection_evidence':recipe.get('selection_evidence'),
             'note':('تاریخچه برای آموزش مدل کامل کوتاه است و برآورد پایه ارائه شده است. ' if len(d.months)<18 else 'روش و طول تاریخچه با آزمون ماه‌های گذشته انتخاب و مدل با داده‌های موجود آموزش داده شد. ')+
-                   'ماه مقصد در فایل ورودی وجود ندارد. عدد خطای مرجع، بازآزماییِ مراحل توسعه است و تأیید مستقل آینده محسوب نمی‌شود. خطای آزمون، تضمین خطای ماه آینده یا تک‌محصول نیست.'}
+                   'دوره مقصد در فایل ورودی وجود ندارد. عدد خطای مرجع، بازآزمایی مراحل توسعه است و تأیید مستقل آینده محسوب نمی‌شود. خطای تاریخی، تضمین خطای دوره آینده یا تک‌محصول نیست.'}
 
 if __name__=='__main__':study()
