@@ -68,8 +68,10 @@ def prepare_panel():
 
 class FeatureBuilder:
     """Construct features from a prefix only. This object NEVER receives holdout actuals."""
-    def __init__(self,meta,y,value,dates):
+    def __init__(self,meta,y,value,dates,periods_per_year=12,period_months=1):
         self.meta=meta.reset_index(drop=True);self.y=y;self.dates=dates;self.cache={}
+        self.periods_per_year=periods_per_year
+        self.period_months=period_months
         self.price=np.divide(value,y,out=np.full_like(value,np.nan),where=y>0)
         self.parent={}
         for name,cols in [('brand_city',['City','Company','Brand']),('market_city',['City'])]:
@@ -78,7 +80,7 @@ class FeatureBuilder:
             self.parent[name]=totals[ids]
 
     def features(self,t,h):
-        assert 11<=t<self.y.shape[1] and h in [1,2,3]
+        assert max(5,self.periods_per_year-1)<=t<self.y.shape[1] and h in [1,2,3]
         if (t,h) in self.cache:return self.cache[(t,h)]
         hist=self.y[:,:t+1];n=len(hist);latest=hist[:,-1]
         x=self.meta.copy();num={}
@@ -93,11 +95,11 @@ class FeatureBuilder:
         pos=hist>0;ever=pos.any(1)
         num['months_since_positive']=np.where(ever,t-np.max(np.where(pos,np.arange(t+1),-1),axis=1),t+1)
         num['months_since_first_positive']=np.where(ever,t-np.argmax(pos,axis=1),0)
-        target=self.dates[t]+h
+        target=self.dates[t]+h*self.period_months
         num['target_month']=np.full(n,target.month);num['target_days']=np.full(n,calendar.monthrange(target.year,target.month)[1])
         num['month_sin']=np.full(n,np.sin(2*np.pi*target.month/12));num['month_cos']=np.full(n,np.cos(2*np.pi*target.month/12))
         num['origin_index']=np.full(n,t)
-        ref=t+h-12;assert ref<=t
+        ref=t+h-self.periods_per_year;assert 0<=ref<=t
         num['target_month_previous_year']=self.y[:,ref]
         for name,ar in self.parent.items():
             par=ar[:,:t+1]
