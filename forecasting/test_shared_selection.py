@@ -93,6 +93,25 @@ class SharedSelectionTests(unittest.TestCase):
         self.assertEqual(brand_a['selection_evidence'],brand_b['selection_evidence'])
         self.assertNotEqual(brand_a['prediction'],brand_b['prediction'])
 
+    def test_origin_wape_uses_cell_errors_not_cancelled_national_total(self):
+        d=self.dataset
+        # Swapped city/product predictions preserve the national total exactly,
+        # but contain two 40-unit errors in each origin.
+        swapped=d.volume[:,0].copy()
+        swapped[0],swapped[1]=swapped[1],swapped[0]
+        candidate=np.tile(swapped[:,None],(1,3))
+        origins=[20,23]
+        by_origin={o:{'base|Last month|2':candidate} for o in origins}
+        policy,_=engine.select_recipes(d,'volume_kg',origins,by_origin)
+        evidence=policy['1']['selection_evidence']
+        self.assertAlmostEqual(policy['1']['validation_wape'],.5)
+        self.assertEqual(evidence['selected'],'base|Last month|2')
+        for detail in evidence['origin_details']:
+            self.assertEqual(detail['actual'],160)
+            self.assertEqual(detail['predicted'],160)
+            self.assertEqual(detail['absolute_error'],80)
+            self.assertAlmostEqual(detail['wape'],.5)
+
     def test_short_history_has_no_fake_comparison(self):
         d=self.dataset
         short=Dataset(d.meta,d.volume[:,:12],d.value[:,:12],d.months[:12],d.source)
