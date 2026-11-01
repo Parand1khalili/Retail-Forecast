@@ -70,8 +70,8 @@ def parse_master(path,mapping=None):
                 maybe=months_in_header(candidate)
                 if len(maybe)>=2:head,months=candidate,maybe;break
             if head is None:continue
-            if len(set(months.values()))!=len(months):
-                raise ValueError(f'در شیت {sh.attrib["name"]} چند ستون برای یک ماه وجود دارد؛ ستون درست را مشخص کنید.')
+            # Resolve the Measure/Index Name boundary BEFORE checking duplicate
+            # months. Date-shaped category headers before it are not time columns.
             fields,_,categories,detected_months,_=detect_layout(head,mapping)
             if (any(field not in fields for field in REQUIRED) or
                 any(fields[field] not in categories for field in ['City','Brand'] if field in fields) or
