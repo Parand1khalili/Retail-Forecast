@@ -96,7 +96,10 @@ class FeatureBuilder:
         num['months_since_positive']=np.where(ever,t-np.max(np.where(pos,np.arange(t+1),-1),axis=1),t+1)
         num['months_since_first_positive']=np.where(ever,t-np.argmax(pos,axis=1),0)
         target=self.dates[t]+h*self.period_months
-        num['target_month']=np.full(n,target.month);num['target_days']=np.full(n,calendar.monthrange(target.year,target.month)[1])
+        num['target_month']=np.full(n,target.month)
+        days=sum(calendar.monthrange((target-j).year,(target-j).month)[1]
+                 for j in range(self.period_months))
+        num['target_days']=np.full(n,days)
         num['month_sin']=np.full(n,np.sin(2*np.pi*target.month/12));num['month_cos']=np.full(n,np.cos(2*np.pi*target.month/12))
         num['origin_index']=np.full(n,t)
         ref=t+h-self.periods_per_year;assert 0<=ref<=t
