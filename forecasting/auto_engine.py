@@ -229,7 +229,8 @@ def select_recipes(d,metric,origins,by_origin):
         for name,pred in pp.items():
             row={'metric':metric,'horizon':h,'model':name,**scores(actual,pred)}
             validation.append(row)
-            candidate_scores.append({'name':name,'wape':row['wape'],'bias':row['bias']})
+            candidate_scores.append({'name':name,'wape':row['wape'],'bias':row['bias'],
+                                     'components':recipes[name]['components']})
         # The selection denominator is identical for every candidate, so
         # minimizing city-cell absolute error is equivalent to pooled WAPE.
         ranked=sorted(candidate_scores,key=lambda row:(float('inf') if row['wape'] is None
