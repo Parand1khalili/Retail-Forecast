@@ -589,7 +589,7 @@ function chart(result){
       '" text-anchor="end" font-size="12" fill="#596273">'+escapeHtml(short(val))+'</text>';
   }).join('');
   const dates=hist.map((v,i)=>i%Math.max(1,Math.ceil(values.length/6))===0?'<text x="'+X(i).toFixed(1)+
-    '" y="'+(h-17)+'" text-anchor="middle" font-size="12" fill="#596273">'+escapeHtml(v.month.slice(2))+'</text>':'').join('');
+    '" y="'+(h-17)+'" text-anchor="middle" font-size="12" fill="#596273">'+escapeHtml(periodName(v.month,result.period_months))+'</text>':'').join('');
   const dots=hist.map((v,i)=>'<circle cx="'+X(i).toFixed(1)+'" cy="'+Y(values[i]).toFixed(1)+
     '" r="3.5" fill="#355c7d"><title>'+escapeHtml(v.month)+' · '+escapeHtml(persian(values[i]))+'</title></circle>').join('');
   const forecastX=X(values.length),forecastY=Y(Number(result.prediction));
@@ -600,7 +600,7 @@ function chart(result){
     '<polyline points="'+line+'" stroke="#355c7d" stroke-width="3" stroke-linejoin="round" fill="none"/>'+dots+dash+
     '<circle cx="'+forecastX.toFixed(1)+'" cy="'+forecastY.toFixed(1)+'" r="6" fill="#6c5b78" stroke="white" stroke-width="2">'+
     '<title>'+escapeHtml(result.target)+' · '+escapeHtml(persian(result.prediction))+' '+escapeHtml(result.unit||'')+'</title></circle>'+
-    '<text x="'+forecastX.toFixed(1)+'" y="'+(h-17)+'" text-anchor="middle" font-size="12" fill="#6c5b78">'+escapeHtml(result.target.slice(2))+'</text>'+
+    '<text x="'+forecastX.toFixed(1)+'" y="'+(h-17)+'" text-anchor="middle" font-size="12" fill="#6c5b78">'+escapeHtml(periodName(result.target,result.period_months))+'</text>'+
     dates+'</svg>';
 }
 
@@ -685,7 +685,7 @@ function selectionEvidenceHtml(r){
     '<p>مقایسه واقعی روش‌های قابل اجرا روی ماه‌های گذشته، با معیار WAPE؛ مقدار کمتر بهتر است.</p></div>'+
     '<span class="evidence-badge">'+persian(valid.length)+' روش مقایسه‌شده</span></div>'+
     '<div class="evidence-meta">شاخص: '+(r.metric==='volume_kg'?'حجم فروش':'مبلغ فروش')+
-    ' · افق: '+persian(e.horizon)+' ماه · سطح خطا: تمام سری‌های شهر × محصولِ فایل</div>'+
+    ' · افق: '+persian(e.horizon)+' دوره · سطح خطا: تمام سری‌های سطح مکانی انتخاب‌شده</div>'+
     '<div class="evidence-grid"><div class="evidence-box"><h4>مقایسه WAPE (تا ۸ روش برتر و مدل منتخب)</h4>'+
     '<div class="evidence-bars">'+entries+'</div><div class="evidence-caption">طول میله‌ها متناسب با خطاست؛ کوتاه‌تر بهتر است. نتایج از Validation واقعی به دست آمده‌اند.</div></div>'+
     '<div class="evidence-box"><h4>عملکرد Recipe منتخب در هر مبدأ</h4>'+detail+
@@ -693,7 +693,7 @@ function selectionEvidenceHtml(r){
     '<div class="evidence-reason">'+escapeHtml(explanation)+'</div>'+
     '<div class="evidence-all"><details><summary>مشاهده جدول کامل '+persian(valid.length)+' روش و خطاهای آن‌ها</summary>'+
     '<div class="evidence-table-wrap"><table class="evidence-table"><thead><tr><th>رتبه</th><th>روش / Recipe</th><th>WAPE</th></tr></thead><tbody>'+table+'</tbody></table></div></details></div>'+
-    '<p>این رتبه‌بندی برای <strong>کل داده بارگذاری‌شده</strong> محاسبه شده است؛ نه فقط شهر یا برند فیلترشده در این درخواست. خطای تاریخی، تضمین دقت آینده نیست.</p></section>';
+    '<p>این رتبه‌بندی برای <strong>همه سری‌های سطح مکانی انتخاب‌شده</strong> محاسبه شده است؛ نه فقط شهر یا برند فیلترشده در این درخواست. خطای تاریخی، تضمین دقت آینده نیست.</p></section>';
 }
 function renderFuture(r){
   const unit=escapeHtml(r.unit),calibration=r.calibration?.validation_wape;
@@ -703,7 +703,7 @@ function renderFuture(r){
   const family=recipe.price_guard?'قاعده مقاوم به جهش قیمت':blended?'ترکیب وزنی مدل‌ها':recipeComponent(recipe.name).label;
   const origins=recipe.validation_origins||[];
   const score=selectionScore!==null?selectionScore:(recipe.price_guard?null:benchmarkScore);
-  const scoreLabel=selectionScore!==null?'WAPE اعتبارسنجی مدل · کل فایل':'WAPE آزمون تاریخی نمونه ماست';
+  const scoreLabel=selectionScore!==null?'WAPE اعتبارسنجی مدل · سطح مکانی منتخب':'WAPE آزمون تاریخی نمونه ماست';
   const scorePeriod=selectionScore!==null?
     (origins.length?'مبدأهای '+origins.join('، '):'دوره ارزیابی تاریخی همین فایل'):
     ('آزمون گذشته · '+(r.selected_benchmark?.target||'مجموعه مرجع ماست'));
@@ -717,7 +717,7 @@ function renderFuture(r){
     ' · خطای تاریخی، نه درصد اطمینان</small></div>';
   const ariaScore=score!==null?'دو شاخص خلاصه':'یک شاخص خلاصه';
   el('results').innerHTML=
-    '<div class="resulthead"><div><div class="eyebrow">FORECAST RESULT</div><h2>پیش‌بینی فروش · <bdi dir="ltr">'+escapeHtml(r.target)+'</bdi></h2>'+
+    '<div class="resulthead"><div><div class="eyebrow">FORECAST RESULT</div><h2>پیش‌بینی فروش · <bdi dir="ltr">'+escapeHtml(periodName(r.target,r.period_months))+'</bdi></h2>'+
     '<div class="source">'+persian(r.rows)+' ترکیب شهر/محصول · '+(r.metric==='volume_kg'?'فروش حجمی':'فروش ریالی')+
     '</div></div><span class="badge">محاسبه تکمیل شد</span></div>'+
     '<section class="kpis" aria-label="'+ariaScore+'"><div class="kpi primary"><div class="label">مقدار پیش‌بینی‌شده</div>'+
@@ -732,7 +732,7 @@ function renderFuture(r){
     '<div class="details"><div class="detail"><strong>دوره داده موجود</strong><span>'+persian(r.window)+
     ' ماه تا <bdi dir="ltr">'+escapeHtml(r.cutoff)+'</bdi></span></div>'+
     '<div class="detail"><strong>مقدار واقعی ماه هدف</strong><span>هنوز در فایل ورودی موجود نیست.</span></div>'+
-    '<div class="detail"><strong>تفسیر WAPE</strong><span>خطای تاریخی در سطح شهر × محصول برای کل فایل؛ تضمین دقت یک ماه یا برند خاص نیست.</span></div>'+
+    '<div class="detail"><strong>تفسیر WAPE</strong><span>خطای تاریخی در سطح ترکیب مکان × محصول در سطح مکانی انتخاب‌شده؛ تضمین دقت یک ماه یا برند خاص نیست.</span></div>'+
     '</div></details><div class="note">'+escapeHtml(r.note)+'</div>';
 }
 
