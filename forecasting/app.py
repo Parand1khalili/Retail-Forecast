@@ -75,7 +75,8 @@ class Handler(BaseHTTPRequestHandler):
                 name=unquote(self.headers.get('X-Filename','uploaded.xlsx'))
                 if not name.lower().endswith('.xlsx'):raise ValueError('فقط فایل xlsx مستر پشتیبانی می‌شود.')
                 raw_mapping=self.headers.get('X-Mapping')
-                mapping=json.loads(unquote(raw_mapping)) if raw_mapping else None
+                mapping=json.loads(unquote(raw_mapping)) if raw_mapping else {}
+                mapping['periodicity']=self.headers.get('X-Periodicity','monthly')
                 dest=UPLOADS/(uuid.uuid4().hex+'.xlsx')
                 with dest.open('wb') as f:
                     left=n
@@ -96,7 +97,9 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     loc=Path(str(body.get('path','')).strip().strip('"').strip("'"))
                     if not loc.is_file() or loc.suffix.lower()!='.xlsx':raise ValueError('مسیر فایل xlsx معتبر نیست.')
-                    dataset=Dataset.file(loc,body.get('mapping'))
+                    mapping=dict(body.get('mapping') or {})
+                    mapping['periodicity']=body.get('periodicity',mapping.get('periodicity','monthly'))
+                    dataset=Dataset.file(loc,mapping)
                 with lock:state['dataset']=dataset
                 self.answer(dataset.options());return
             if path=='/api/forecast':
