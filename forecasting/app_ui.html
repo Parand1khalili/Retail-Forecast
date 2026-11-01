@@ -238,7 +238,7 @@ input:focus,select:focus{outline:2px solid #f1c1cb;border-color:#c06c84;box-shad
 <div class="status" id="status" role="status" aria-live="polite">فایل مستر را وارد کنید یا از نمونه موجود استفاده کنید.</div>
 <aside class="stage-card" aria-label="مراحل پیش‌بینی">
 <section class="wizard-stage" data-panel="0"><div class="stage-heading"><span class="stage-num">01</span><h2>ورود اطلاعات فروش</h2></div><p class="stage-lead">فایل مستر Excel را انتخاب کنید؛ ساختار ستون‌ها در مرحله بعد بررسی می‌شود.</p><div class="source source-indicator" id="source" aria-live="polite">در حال بررسی دادهٔ موجود…</div><div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="انتخاب یا رها کردن فایل مستر اکسل"><span class="drop-icon" aria-hidden="true">⇧</span><strong>فایل Excel را اینجا رها کنید</strong><span>یا <span class="pick-link">برای انتخاب فایل کلیک کنید</span></span><span>فقط .xlsx · حداکثر ۲۲۰ مگابایت</span></div><input class="file-input" type="file" id="file" accept=".xlsx"><div id="selectedFile" class="selected-file" hidden></div><button id="upload" class="btn full" disabled>خواندن فایل انتخاب‌شده</button><details class="optional-path"><summary>راه دیگر: خواندن از مسیر فایل در رایانه</summary><div class="field"><label for="localPath">مسیر کامل فایل .xlsx روی رایانه اجراکننده برنامه</label><div class="fileline"><input type="text" id="localPath" placeholder="H:\folder\master.xlsx"><button class="btn secondary" id="loadPath">خواندن</button></div></div></details><p class="help">نام ستون‌ها خودکار تشخیص داده می‌شود؛ اگر ساختار متفاوت باشد، می‌توانید نگاشت ستون‌ها را تأیید کنید.</p><button id="sample" class="btn secondary full">استفاده از داده نمونه ماست</button>
-<div class="stage-actions"><button id="nextFile" class="btn" type="button" disabled>ادامه: بررسی ستون‌ها</button><span class="caption">ابتدا باید یک فایل با موفقیت خوانده شود.</span></div></section>
+<div class="stage-actions"><button id="nextFile" class="btn" type="button" disabled>ادامه: بررسی ستون‌ها</button><span class="caption" id="fileCaption">ابتدا باید یک فایل با موفقیت خوانده شود.</span></div></section>
 <section class="wizard-stage" data-panel="1" hidden><div class="stage-heading"><span class="stage-num">02</span><h2>تأیید ساختار داده</h2></div>
 <p class="stage-lead">ستون‌های دسته‌بندی و دوره‌های ماهانه را بررسی کنید؛ اگر تشخیص درست نبود، آن را دستی اصلاح کنید.</p>
 <div class="source source-indicator" id="schemaSource"></div>
@@ -257,7 +257,7 @@ const defaultDimNames=['City','Company','Brand','SubBrand','Subcategory','Subcat
 const defaultDimLabels=['شهر','کمپانی','برند','زیر‌برند','ساب‌کتگوری ۱','ساب‌کتگوری ۲','ساب‌کتگوری ۳','ساب‌کتگوری ۴'];
 let dimNames=[...defaultDimNames],labels=[...defaultDimLabels];
 let data=null,pendingSource=null,selectedUpload=null,busy=false;
-let activeStage=0,maxStage=0,schemaNeedsReview=false,resultReady=false;
+let activeStage=0,maxStage=0,schemaNeedsReview=false,resultReady=false,recheckingMapping=false;
 const el=id=>document.getElementById(id);
 const persian=n=>new Intl.NumberFormat('fa-IR',{maximumFractionDigits:0}).format(n);
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -272,6 +272,7 @@ const status=(msg,kind='info')=>{
 function updateWizard(){
   const ready=Boolean(data),review=ready&&!schemaNeedsReview;
   el('nextFile').disabled=busy||!ready;
+  el('fileCaption').textContent=ready?'فایل آماده است؛ برای تأیید ستون‌ها ادامه دهید.':'ابتدا باید فایل با موفقیت خوانده شود.';
   el('nextSchema').disabled=busy||!review;
   el('nextFilters').disabled=busy||!review;
   el('run').disabled=busy||!review;
@@ -349,8 +350,11 @@ function setData(next,initial=false){
   const description=next.source+' · '+next.months[0]+' تا '+next.months.at(-1)+' · '+persian(next.series_count)+' ردیف شهری';
   el('source').textContent=description;
   el('schemaSource').textContent=description;el('metric').options[0].textContent='فروش حجمی، '+next.units.volume_kg;el('metric').options[1].textContent='فروش ریالی، '+next.units.value_1000_toman;refreshFilters();refreshMonths();el('results').innerHTML='';
-  showStage(initial?0:1,true);
-  status(initial?'داده نمونه آماده است؛ برای ادامه، روی «بررسی ستون‌ها» بزنید.':'فایل با موفقیت خوانده شد. ستون‌ها و تاریخ‌ها را بررسی و تأیید کنید.','success');
+  const afterCorrection=Boolean(recheckingMapping);recheckingMapping=false;
+  showStage(afterCorrection?1:0,true);
+  status(afterCorrection?'نگاشت جدید اعمال شد. ستون‌ها را بررسی و «تأیید و ادامه» را بزنید.':
+    initial?'داده نمونه آماده است؛ برای ادامه، روی «بررسی ستون‌ها» بزنید.':
+    'فایل با موفقیت خوانده شد. برای بررسی ستون‌ها روی «ادامه» بزنید.','success');
 }
 async function post(url,body,binary=false,mapping=null){let headers=binary?{'X-Filename':encodeURIComponent(body.name)}:{'Content-Type':'application/json'};if(binary&&mapping)headers['X-Mapping']=encodeURIComponent(JSON.stringify(mapping));let opts={method:'POST',body:binary?body:JSON.stringify(body),headers};let res=await fetch(url,opts);let json=await res.json();if(res.status===422&&json.mapping_required)return json;if(!res.ok)throw Error(json.error||'خطا در پردازش');return json}
 function showMapping(info,required=false){
@@ -402,7 +406,9 @@ function applyMapping(){let mapping=currentMapping();
      !mapping.dimension_columns.includes(mapping.fields.Brand||'Brand')){
     status('ستون‌های City و Brand باید در دسته‌بندی‌ها انتخاب شده باشند.',true);return;
   }
-  if(pendingSource==='upload'){let f=selectedUpload;if(f)operation('فایل با نگاشت جدید خوانده می‌شود…',()=>post('/api/upload',f,true,mapping),'upload')}else operation('فایل با نگاشت جدید خوانده می‌شود…',()=>post('/api/load',{path:el('localPath').value,mapping}),'path')}
+  recheckingMapping=true;
+  if(pendingSource==='upload'){let f=selectedUpload;if(f)operation('فایل با نگاشت جدید خوانده می‌شود…',()=>post('/api/upload',f,true,mapping),'upload')}
+  else operation('فایل با نگاشت جدید خوانده می‌شود…',()=>post('/api/load',{path:el('localPath').value,mapping}),'path')}
 function lockButtons(b){
   busy=b;
   document.querySelectorAll('.wizard-layout button, .wizard-layout select, .wizard-layout input')
@@ -418,6 +424,7 @@ async function operation(msg,fn,source=null){
     if(result.mapping_required)showMapping(result,true);
     else setData(result);
   }catch(e){
+    recheckingMapping=false;
     status('خواندن فایل انجام نشد: '+e.message,true);
   }finally{lockButtons(false)}
 }
@@ -436,8 +443,13 @@ function uploadSelected(){
   operation('در حال خواندن و اعتبارسنجی فایل '+selectedUpload.name+'…',()=>post('/api/upload',selectedUpload,true),'upload');
 }
 el('editMapping').onclick=()=>{
-  if(data?.schema)showMapping(data.schema);
-  else status('مشخصات ستون‌های فایل نمونه موجود نیست؛ می‌توانید فایل Excel جدید بارگذاری کنید.',true)
+  if(!data?.schema){status('مشخصات ستون‌های فایل نمونه موجود نیست؛ می‌توانید فایل Excel جدید بارگذاری کنید.',true);return}
+  if(!(pendingSource==='upload'&&selectedUpload) && !(pendingSource==='path'&&el('localPath').value.trim())){
+    showStage(0,true);
+    status('برای اصلاح ستون‌ها، ابتدا همان فایل Excel را دوباره انتخاب کنید یا مسیر آن را وارد کنید.','info');
+    return;
+  }
+  showMapping(data.schema);
 };
 el('upload').onclick=uploadSelected;
 el('file').addEventListener('change',event=>{const f=event.target.files?.[0];if(f)setUpload(f,true)});
