@@ -213,6 +213,7 @@ def select_recipes(d,metric,origins,by_origin):
                                         (by_origin[o][name]>=0).all() for o in origins)}
     if not common:raise ValueError('No finite, nonnegative common candidates across validation origins.')
     policy={};validation=[];truth=d.metric(metric)
+    grain='market_segment' if 'Market' in d.all_dimensions() else 'city_segment'
     for h in [1,2,3]:
         if any(o+h>=len(d.months) for o in origins):
             raise ValueError('Validation target extends beyond available observations.')
@@ -253,10 +254,10 @@ def select_recipes(d,metric,origins,by_origin):
         policy[str(h)]={**recipes[winner],'name':winner,
                         'validation_wape':scores(actual,pp[winner])['wape'],
                         'validation_origins':[d.months[o] for o in origins],
-                        'comparison_grain':'city_segment',
+                        'comparison_grain':grain,
                         'comparison_metric':'pooled WAPE',
                         'selection_evidence':{
-                            'metric':'pooled WAPE','grain':'city_segment',
+                            'metric':'pooled WAPE','grain':grain,
                             'scope':'all_series','horizon':h,'selected':winner,
                             'candidate_scores':ranked,'origin_details':by_month
                         }}
