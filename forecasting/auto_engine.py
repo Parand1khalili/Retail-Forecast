@@ -45,7 +45,8 @@ def price_shift_guard(d,cutoff):
     center=float(np.median(prior));mad=float(np.median(abs(prior-center)))
     limit=max(.05,3*1.4826*mad)
     return {'active':bool(abs(changes[-1]-center)>limit),'current_change':float(changes[-1]),
-            'median_prior_change':center,'deviation_limit':limit,'reference_periods':len(prior),
+            'median_prior_change':center,'deviation_limit':limit,
+            'reference_months':len(prior)*d.period_months,'reference_periods':len(prior),
             'rule':'absolute deviation from prior-24-month median > max(5 percentage points, 3 scaled MAD)'}
 
 def guarded_money(d,cutoff):
