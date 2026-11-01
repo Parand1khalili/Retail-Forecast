@@ -210,6 +210,7 @@ input[type=text]:focus,select:focus{border-color:var(--focus)}
 .evidence-table tr.selected{background:#f0f4f8}
 .note{margin-top:14px;padding:10px 12px;font-size:12px;line-height:1.8;color:var(--warning);
   background:var(--warning-bg);border:1px solid var(--warning-line);border-radius:8px}
+.sample-tag{background:#fff8ed;border-color:#e5d6c2;color:#76511c}.sample-option{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}.sample-option .help{margin:0}.comparison-note{font-size:12px;color:var(--muted);margin-top:6px}
 .foot{color:var(--muted);font-size:11px;line-height:1.8;margin:16px 0 0;padding:0;text-align:right}
 .empty{padding:55px 24px;text-align:center;color:var(--muted)}
 .empty-visual{width:55px;height:55px;margin:0 auto 10px;display:grid;place-items:center;background:#eef3f7;color:var(--navy);
@@ -263,10 +264,12 @@ const defaultDimLabels=['شهر','کمپانی','برند','زیر‌برند','
 let dimNames=[...defaultDimNames],labels=[...defaultDimLabels];
 let data=null,pendingSource=null,selectedUpload=null,busy=false;
 let activeStage=0,maxStage=0,schemaNeedsReview=false,resultReady=false,recheckingMapping=false;
+let sourceMode='none';
 const el=id=>document.getElementById(id);
 const persian=n=>new Intl.NumberFormat('fa-IR',{maximumFractionDigits:0}).format(n);
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const percent=n=>new Intl.NumberFormat('fa-IR',{style:'percent',maximumFractionDigits:1}).format(n);
+const decimal=n=>new Intl.NumberFormat('fa-IR',{maximumFractionDigits:1}).format(n);
 const short=n=>{if(Math.abs(n)>=1e9)return persian(n/1e9)+' میلیارد';if(Math.abs(n)>=1e6)return persian(n/1e6)+' میلیون';if(Math.abs(n)>=1e3)return persian(n/1e3)+' هزار';return persian(n)};
 const pmonth=s=>{let [y,m]=s.split('-').map(Number);return y*12+m};
 const nextMonth=(s,h)=>{let d=new Date(Number(s.slice(0,4)),Number(s.slice(5,7))-1+h,1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')};
@@ -304,6 +307,7 @@ function showStage(step,force=false){
     panel.hidden=Number(panel.dataset.panel)!==step;
   });
   updateWizard();
+  if(step===3)updateRunSummary();
   if(previous!==step)document.querySelector?.('.wizard-layout')?.scrollIntoView({block:'start',behavior:'smooth'});
   return true;
 }
@@ -328,8 +332,18 @@ function advanceTo(step){
   if(step<4)status(hints[step]);
 }
 
+function selectedFilters(){const filters={};dimNames.forEach((dim,i)=>{const value=el('f'+i)?.value;if(value&&value!=='*')filters[dim]=value});return filters}
+function updateRunSummary(){
+  if(!data)return;
+  const filters=selectedFilters(),target=el('horizon').selectedOptions?.[0]?.textContent || nextMonth(data.months.at(-1),Number(el('horizon').value)||1);
+  const selectedCount=data.rows.filter(row=>dimNames.every((key,i)=>!filters[key]||row[i]===filters[key])).length;
+  const parts=[sourceMode==='sample'?'داده نمونه':data.source,el('metric').selectedOptions?.[0]?.textContent||'فروش حجمی',target,
+    Object.entries(filters).map(([key,val])=>labels[dimNames.indexOf(key)]+': '+val).join('، ')||'تمام دسته‌بندی‌ها',
+    persian(selectedCount)+' سری موجود'];
+  el('runSummaryText').textContent=parts.join('  ·  ');
+}
 const choice=(node,values,selected)=>{node.replaceChildren();for(const [value,name] of values){let o=document.createElement('option');o.value=value;o.textContent=name;node.append(o)}if(values.some(x=>x[0]===selected))node.value=selected};
-function makeFilters(){let box=el('filters');box.replaceChildren();dimNames.forEach((dim,i)=>{let div=document.createElement('div');div.className='field';let label=document.createElement('label');label.textContent=labels[i];label.htmlFor='f'+i;let select=document.createElement('select');select.id='f'+i;select.addEventListener('change',()=>{refreshFilters(i+1);invalidateResult()});div.append(label,select);box.append(div)})}
+function makeFilters(){let box=el('filters');box.replaceChildren();dimNames.forEach((dim,i)=>{let div=document.createElement('div');div.className='field';let label=document.createElement('label');label.textContent=labels[i];label.htmlFor='f'+i;let select=document.createElement('select');select.id='f'+i;select.addEventListener('change',()=>{refreshFilters(i+1);invalidateResult();updateRunSummary()});div.append(label,select);box.append(div)})}
 function refreshFilters(from=0){if(!data)return;let rows=data.rows;for(let i=0;i<dimNames.length;i++){let node=el('f'+i);if(i>=from){let prev=node.value;let relevant=rows.filter(row=>{for(let j=0;j<i;j++){let v=el('f'+j).value;if(v!=='*'&&row[j]!==v)return false}return true});let opts=[...new Set(relevant.map(row=>row[i]))].sort((a,b)=>a.localeCompare(b));choice(node,[['*','همه'],...opts.map(v=>[v,v])],prev)}if(node.value!=='*')rows=rows.filter(row=>row[i]===node.value)}}
 function refreshMonths(){if(!data)return;let months=data.months.slice(1);choice(el('cutoff'),months.map(x=>[x,x]),months.at(-1));el('latestMonth').textContent='آخرین ماه موجود: '+months.at(-1)+'؛ فقط ماه‌های بعد از آن برای پیش‌بینی نمایش داده می‌شوند.';refreshWindow();refreshTarget()}
 function refreshWindow(){let n=data.months.indexOf(el('cutoff').value)+1;let old=el('window').value;let vals=[['all','همهٔ ماه‌های موجود'],...[2,3,6,12,24,36].filter(x=>x<=n).map(x=>[String(x),x+' ماه'])];choice(el('window'),vals,old||'2')}
@@ -350,13 +364,17 @@ function renderSchemaPreview(schema){
   preview.append(cap);
 }
 function setData(next,initial=false){
+  sourceMode=pendingSource==='builtin'||(initial&&String(next.source).includes('نمونه'))?'sample':'file';
   data=next;schemaNeedsReview=false;resultReady=false;maxStage=0;
   dimNames=Array.isArray(next.dimensions)&&next.dimensions.length?next.dimensions:[...defaultDimNames];
   labels=dimNames.map(name=>defaultDimNames.includes(name)?defaultDimLabels[defaultDimNames.indexOf(name)]:name);
   makeFilters();renderSchemaPreview(next.schema);el('mappingPanel').hidden=true;
   const description=next.source+' · '+next.months[0]+' تا '+next.months.at(-1)+' · '+persian(next.series_count)+' ردیف شهری';
   el('source').textContent=description;
-  el('schemaSource').textContent=description;el('metric').options[0].textContent='فروش حجمی، '+next.units.volume_kg;el('metric').options[1].textContent='فروش ریالی، '+next.units.value_1000_toman;refreshFilters();refreshMonths();el('results').innerHTML='';
+  el('schemaSource').textContent=description;
+  el('sourceKind').hidden=false;
+  el('sourceKind').textContent=sourceMode==='sample'?'داده نمونه · ماست':'فایل کاربر · Excel';
+  el('sourceKind').className='badge'+(sourceMode==='sample'?' sample-tag':'');el('metric').options[0].textContent='فروش حجمی، '+next.units.volume_kg;el('metric').options[1].textContent='فروش ریالی، '+next.units.value_1000_toman;refreshFilters();refreshMonths();updateRunSummary();el('results').innerHTML='';
   const afterCorrection=Boolean(recheckingMapping);recheckingMapping=false;
   showStage(afterCorrection?1:0,true);
   status(afterCorrection?'نگاشت جدید اعمال شد. ستون‌ها را بررسی و «تأیید و ادامه» را بزنید.':
@@ -441,10 +459,11 @@ async function operation(msg,fn,source=null){
 }
 function setUpload(file,auto=false){
   if(busy||!file)return;
-  if(!/\.xlsx$/i.test(file.name)){status('فقط فایل Excel با پسوند .xlsx پشتیبانی می‌شود.',true);return}
-  if(file.size>220*1024*1024){status('حجم فایل باید کمتر از ۲۲۰ مگابایت باشد.',true);return}
+  if(!/\.xlsx$/i.test(file.name)){status('پسوند فایل معتبر نیست. لطفاً یک فایل Excel با پسوند .xlsx انتخاب کنید.',true);return}
+  if(file.size>220*1024*1024){status('فایل بزرگ‌تر از سقف مجاز است. حداکثر حجم قابل بارگذاری ۲۲۰ مگابایت است.',true);return}
   selectedUpload=file;
   el('selectedFile').textContent=file.name+' · '+new Intl.NumberFormat('fa-IR',{maximumFractionDigits:1}).format(file.size/1048576)+' MB';
+  el('selectedFile').dir='auto';
   el('selectedFile').hidden=false;
   el('upload').disabled=false;
   if(auto)uploadSelected();
@@ -477,8 +496,37 @@ document.addEventListener('drop',e=>{if(e.dataTransfer?.files?.length)e.preventD
 el('loadPath').onclick=()=>operation('فایل محلی در حال خواندن است…',()=>post('/api/load',{path:el('localPath').value}),'path');
 el('sample').onclick=()=>operation('نمونه بارگذاری می‌شود…',()=>post('/api/load',{builtin:true}),'builtin');
 el('cutoff').onchange=()=>{refreshWindow();refreshTarget();invalidateResult()};
-el('metric').onchange=()=>{let recommended=el('metric').value==='volume_kg'?'2':'6';if([...el('window').options].some(o=>o.value===recommended))el('window').value=recommended;invalidateResult()};
-function chart(result){let vals=result.history.map(x=>x.value),max=Math.max(...vals,result.prediction,result.actual_if_known||0,1),n=vals.length+1,w=880,h=240,pad=32;let X=i=>pad+(w-2*pad)*i/Math.max(n-1,1);let Y=v=>h-pad-(h-2*pad)*v/max;let pts=vals.map((v,i)=>X(i)+','+Y(v)).join(' ');let last=vals.length-1;let labels=result.history.map((x,i)=>i%Math.max(1,Math.ceil(vals.length/7))===0?`<text x="${X(i)}" y="${h-6}" text-anchor="middle" fill="#8795a9" font-size="12">${x.month.slice(2)}</text>`:'').join('');let dots=vals.map((v,i)=>`<circle cx="${X(i)}" cy="${Y(v)}" r="3" fill="#6c5b7b"/>`).join('');let targetX=X(vals.length),targetY=Y(result.prediction);return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="نمودار تاریخچه و پیش‌بینی"><line x1="${pad}" y1="${h-pad}" x2="${w-pad}" y2="${h-pad}" stroke="#dbe4ef"/><polyline fill="none" stroke="#6c5b7b" stroke-width="3" points="${pts}"/>${dots}<line x1="${X(last)}" y1="${Y(vals[last])}" x2="${targetX}" y2="${targetY}" stroke="#f67280" stroke-width="3" stroke-dasharray="7 5"/><circle cx="${targetX}" cy="${targetY}" r="7" fill="#f67280"/><text x="${targetX}" y="${h-6}" text-anchor="middle" fill="#f67280" font-size="12">${result.target.slice(2)}</text>${labels}</svg>`}
+el('metric').onchange=()=>{let recommended=el('metric').value==='volume_kg'?'2':'6';if([...el('window').options].some(o=>o.value===recommended))el('window').value=recommended;invalidateResult();updateRunSummary()};
+function chart(result){
+  const hist=result.history||[],values=hist.map(x=>Number(x.value)),last=values.length-1;
+  if(!values.length)return '<p class="help">تاریخچه ماهانه برای ترسیم نمودار موجود نیست.</p>';
+  const w=980,h=274,left=65,right=25,top=15,bottom=44;
+  const innerW=w-left-right,innerH=h-top-bottom,n=values.length+1;
+  const X=i=>left+innerW*i/Math.max(1,n-1);
+  const max=Math.max(1,...values,Number(result.prediction)||0);
+  const tickMax=max*1.08;
+  const Y=v=>top+innerH*(1-v/tickMax);
+  const line=values.map((v,i)=>X(i).toFixed(1)+','+Y(v).toFixed(1)).join(' ');
+  const ticks=[0,.25,.5,.75,1].map(f=>{const val=tickMax*f,y=Y(val);
+    return '<line x1="'+left+'" y1="'+y.toFixed(1)+'" x2="'+(w-right)+'" y2="'+y.toFixed(1)+
+      '" stroke="#e3e7ed" stroke-width="1"/><text x="'+(left-10)+'" y="'+(y+4).toFixed(1)+
+      '" text-anchor="end" font-size="12" fill="#596273">'+escapeHtml(short(val))+'</text>';
+  }).join('');
+  const dates=hist.map((v,i)=>i%Math.max(1,Math.ceil(values.length/6))===0?'<text x="'+X(i).toFixed(1)+
+    '" y="'+(h-17)+'" text-anchor="middle" font-size="12" fill="#596273">'+escapeHtml(v.month.slice(2))+'</text>':'').join('');
+  const dots=hist.map((v,i)=>'<circle cx="'+X(i).toFixed(1)+'" cy="'+Y(values[i]).toFixed(1)+
+    '" r="3.5" fill="#355c7d"><title>'+escapeHtml(v.month)+' · '+escapeHtml(persian(values[i]))+'</title></circle>').join('');
+  const forecastX=X(values.length),forecastY=Y(Number(result.prediction));
+  const dash='<line x1="'+X(last).toFixed(1)+'" y1="'+Y(values[last]).toFixed(1)+
+    '" x2="'+forecastX.toFixed(1)+'" y2="'+forecastY.toFixed(1)+'" stroke="#6c5b78" stroke-width="3" stroke-dasharray="7 6"/>';
+  return '<svg viewBox="0 0 '+w+' '+h+'" dir="ltr" role="img" aria-label="فروش ماه‌های گذشته با خط Navy پیوسته و پیش‌بینی ماه آینده با خط Plum نقطه‌چین">'+
+    '<text x="'+left+'" y="12" font-size="12" fill="#596273">'+escapeHtml(result.unit||'')+'</text>'+ticks+
+    '<polyline points="'+line+'" stroke="#355c7d" stroke-width="3" stroke-linejoin="round" fill="none"/>'+dots+dash+
+    '<circle cx="'+forecastX.toFixed(1)+'" cy="'+forecastY.toFixed(1)+'" r="6" fill="#6c5b78" stroke="white" stroke-width="2">'+
+    '<title>'+escapeHtml(result.target)+' · '+escapeHtml(persian(result.prediction))+' '+escapeHtml(result.unit||'')+'</title></circle>'+
+    '<text x="'+forecastX.toFixed(1)+'" y="'+(h-17)+'" text-anchor="middle" font-size="12" fill="#6c5b78">'+escapeHtml(result.target.slice(2))+'</text>'+
+    dates+'</svg>';
+}
 
 function recipeComponent(name){
   const parts=String(name||'').split('|');
@@ -610,7 +658,7 @@ el('backTarget').onclick=()=>advanceTo(2);
 el('editSelection').onclick=()=>advanceTo(2);
 el('editTarget').onclick=()=>advanceTo(3);
 el('newSource').onclick=()=>advanceTo(0);
-el('horizon').onchange=invalidateResult;
+el('horizon').onchange=()=>{invalidateResult();updateRunSummary()};
 makeFilters();showStage(0,true);
 fetch('/api/data').then(x=>{if(!x.ok)throw Error('ارتباط با سرور برقرار نشد.');return x.json()}).then(x=>{
   if(x.ready===false){el('source').textContent=x.message;el('sample').hidden=true;status('داده نمونه در این رایانه موجود نیست. برای شروع یک فایل Excel را رها یا انتخاب کنید.');}
