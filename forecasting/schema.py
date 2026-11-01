@@ -138,6 +138,7 @@ def metric_unit(kind,label,override=None):
     s=normalized(label)
     if kind=='volume_kg':
         if any(x in s for x in ['kilogram','kg','کیلوگرم']):return 'kg'
+        if re.search(r'(?<![a-z])gr(?:am|ams)?(?![a-z])',str(label),re.I) or 'گرم' in s:return 'گرم'
         if any(x in s for x in ['liter','litre','لیتر']) or re.search(r'\(\s*(l|lit|lt)\s*\)',str(label),re.I):return 'لیتر'
         if any(x in s for x in ['unit','count','تعداد']):return 'عدد'
         return 'واحد حجم فایل'
