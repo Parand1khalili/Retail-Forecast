@@ -48,7 +48,7 @@ def period(value,periodicity='monthly'):
     if periodicity=='monthly':return month(value)
     if periodicity!='bimonthly':raise ValueError('نوع دوره فقط ماهانه یا دوماهه است.')
     text=unicodedata.normalize('NFKC',str(value or '')).translate(PERSIAN_DIGITS).strip().lower()
-    match=re.fullmatch(r'([a-z]+)\\s*[-–—]\\s*([a-z]+)\\s+(20\\d{2})',text)
+    match=re.fullmatch(r'([a-z]+)\s*[-–—]\s*([a-z]+)\s+(20\d{2})',text)
     if not match:return None
     first,second,year=match.groups()
     if first not in MONTHS or second not in MONTHS:return None
