@@ -271,7 +271,7 @@ function recipeHtml(r){
 function evidenceMethod(item){
   const components=Array.isArray(item.components)?item.components:[];
   if(components.length>1){
-    return components.map(([name,weight])=>percent(Number(weight))+' '+recipeComponent(name).label).join(' + ');
+    return 'ترکیب: '+components.map(([name,weight])=>percent(Number(weight))+' '+recipeComponent(name).label).join(' + ');
   }
   return recipeComponent(item.name).label;
 }
