@@ -252,7 +252,7 @@ input[type=text]:focus,select:focus{border-color:var(--focus)}
 </nav>
 <div class="status" id="status" role="status" aria-live="polite">فایل مستر را وارد کنید یا از نمونه موجود استفاده کنید.</div>
 <aside class="stage-card" aria-label="مراحل پیش‌بینی">
-<section class="wizard-stage" data-panel="0"><div class="stage-heading"><span class="stage-num">01</span><h2>فایل فروش را وارد کنید</h2></div><p class="stage-lead">فایل مستر Excel را انتخاب کنید؛ ساختار ستون‌ها در مرحله بعد بررسی می‌شود.</p><div class="source source-indicator" id="source" aria-live="polite">هیچ فایلی برای این نشست انتخاب نشده است.</div><div id="sourceKind" class="badge" hidden></div><div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="انتخاب فایل Excel یا رها کردن فایل در این قسمت"><span class="drop-icon" aria-hidden="true">⇧</span><strong>فایل Excel را اینجا رها کنید</strong><span>یا <span class="pick-link">انتخاب فایل</span> را بزنید</span><span>Excel (.xlsx) · حداکثر ۲۲۰ مگابایت</span></div><input class="file-input" type="file" id="file" accept=".xlsx"><div id="selectedFile" class="selected-file" hidden></div><button id="upload" class="btn secondary" disabled>بارگذاری دوباره فایل</button><details class="optional-path"><summary>راه دیگر: خواندن از مسیر فایل در رایانه</summary><div class="field"><label for="localPath">مسیر کامل فایل .xlsx روی رایانه اجراکننده برنامه</label><div class="fileline"><input type="text" id="localPath" placeholder="H:\folder\master.xlsx"><button class="btn secondary" id="loadPath">خواندن</button></div></div></details><p class="help">ستون شاخص فروش (Measure یا Index Name) مرز دسته‌بندی‌ها و تاریخ‌های ماهانه است. در مرحله بعد می‌توانید تشخیص را اصلاح کنید.</p><div class="sample-option"><span class="help">فایل خودتان در دسترس نیست؟</span> <button id="sample" class="btn secondary">استفاده از نمونه ماست</button></div>
+<section class="wizard-stage" data-panel="0"><div class="stage-heading"><span class="stage-num">01</span><h2>فایل فروش را وارد کنید</h2></div><p class="stage-lead">فایل مستر Excel را انتخاب کنید؛ ساختار ستون‌ها در مرحله بعد بررسی می‌شود.</p><div class="field"><label for="periodicity">نوع دوره داده‌های فروش</label><select id="periodicity"><option value="monthly">ماهانه (هر ستون یک ماه)</option><option value="bimonthly">دوماهه (مانند May-Jun 2026)</option></select><p class="help">این انتخاب هنگام خواندن فایل و محاسبه پیش‌بینی اعمال می‌شود.</p></div><div class="source source-indicator" id="source" aria-live="polite">هیچ فایلی برای این نشست انتخاب نشده است.</div><div id="sourceKind" class="badge" hidden></div><div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="انتخاب فایل Excel یا رها کردن فایل در این قسمت"><span class="drop-icon" aria-hidden="true">⇧</span><strong>فایل Excel را اینجا رها کنید</strong><span>یا <span class="pick-link">انتخاب فایل</span> را بزنید</span><span>Excel (.xlsx) · حداکثر ۲۲۰ مگابایت</span></div><input class="file-input" type="file" id="file" accept=".xlsx"><div id="selectedFile" class="selected-file" hidden></div><button id="upload" class="btn secondary" disabled>بارگذاری دوباره فایل</button><details class="optional-path"><summary>راه دیگر: خواندن از مسیر فایل در رایانه</summary><div class="field"><label for="localPath">مسیر کامل فایل .xlsx روی رایانه اجراکننده برنامه</label><div class="fileline"><input type="text" id="localPath" placeholder="H:\folder\master.xlsx"><button class="btn secondary" id="loadPath">خواندن</button></div></div></details><p class="help">ستون شاخص فروش (Measure یا Index Name) مرز دسته‌بندی‌ها و تاریخ‌های ماهانه است. در مرحله بعد می‌توانید تشخیص را اصلاح کنید.</p><div class="sample-option"><span class="help">فایل خودتان در دسترس نیست؟</span> <button id="sample" class="btn secondary">استفاده از نمونه ماست</button></div>
 <div class="stage-actions"><button id="nextFile" class="btn" type="button" disabled>ادامه: بررسی ستون‌ها</button><span class="caption" id="fileCaption">ابتدا باید یک فایل با موفقیت خوانده شود.</span></div></section>
 <section class="wizard-stage" data-panel="1" hidden><div class="stage-heading"><span class="stage-num">02</span><h2>تأیید ساختار داده</h2></div>
 <p class="stage-lead">ستون‌های دسته‌بندی و دوره‌های ماهانه را بررسی کنید؛ اگر تشخیص درست نبود، آن را دستی اصلاح کنید.</p>
@@ -262,9 +262,9 @@ input[type=text]:focus,select:focus{border-color:var(--focus)}
 <div id="mappingPanel" hidden></div>
 <div class="stage-actions"><button id="nextSchema" class="btn" type="button" disabled>تأیید و ادامه</button><button id="backSchema" class="btn secondary" type="button">بازگشت به فایل</button></div>
 </section>
-<section class="wizard-stage" data-panel="2" hidden><div class="stage-heading"><span class="stage-num">03</span><h2>انتخاب بازار و شاخص</h2></div><p class="stage-lead">شهر، برند و سطح دسته‌بندی موردنظر را مشخص کنید. «همه» یعنی مجموع همان سطح.</p><div class="field"><label for="metric">شاخص</label><select id="metric"><option value="volume_kg">فروش حجمی، کیلوگرم</option><option value="value_1000_toman">فروش ریالی، هزار تومان</option></select></div><div id="filters"></div><p class="help">فیلترها بر اساس ترکیب‌های موجود در فایل ساخته می‌شوند و مقدار پیش‌بینی را تعیین می‌کنند. معیار انتخاب مدل روی کل فایل محاسبه می‌شود.</p>
+<section class="wizard-stage" data-panel="2" hidden><div class="stage-heading"><span class="stage-num">03</span><h2>انتخاب بازار و شاخص</h2></div><p class="stage-lead">شهر، برند و سطح دسته‌بندی موردنظر را مشخص کنید. ابتدا سطح مکانی را مشخص کنید؛ جمع‌کردن All و City با هم مجاز نیست.</p><div class="field"><label for="metric">شاخص</label><select id="metric"><option value="volume_kg">فروش حجمی، کیلوگرم</option><option value="value_1000_toman">فروش ریالی، هزار تومان</option></select></div><div id="filters"></div><p class="help">فیلترها بر اساس ترکیب‌های موجود در فایل ساخته می‌شوند و مقدار پیش‌بینی را تعیین می‌کنند. معیار انتخاب مدل روی کل فایل محاسبه می‌شود.</p>
 <div class="stage-actions"><button id="nextFilters" class="btn" type="button">ادامه: انتخاب ماه</button><button id="backFilters" class="btn secondary" type="button">بازگشت به ستون‌ها</button></div></section>
-<section class="wizard-stage" data-panel="3" hidden><div class="stage-heading"><span class="stage-num">04</span><h2>تنظیم و اجرای پیش‌بینی</h2></div><p class="stage-lead">ماه موردنظر را انتخاب کنید؛ موتور به‌طور خودکار روش‌ها را ارزیابی می‌کند و مدل نهایی را می‌سازد.</p><p class="help" id="latestMonth"></p><div class="field"><label for="horizon">ماه مقصدِ بدون داده</label><select id="horizon"></select></div><div hidden><select id="cutoff"></select><select id="window"></select><select id="method"><option value="auto">خودکار</option></select></div><div class="run-summary" id="runSummary" aria-live="polite"><div><strong>خلاصه درخواست</strong><p id="runSummaryText">پس از انتخاب بازار، خلاصه درخواست در اینجا نمایش داده می‌شود.</p></div></div><p class="help">روش منتخب بر اساس خطای ارزیابی تاریخی انتخاب می‌شود؛ این خطا تضمین دقت ماه آینده نیست.</p><div class="stage-actions"><button class="btn" id="run">محاسبه پیش‌بینی</button><button class="btn secondary" id="backTarget" type="button">بازگشت به فیلترها</button></div></section>
+<section class="wizard-stage" data-panel="3" hidden><div class="stage-heading"><span class="stage-num">04</span><h2>تنظیم و اجرای پیش‌بینی</h2></div><p class="stage-lead">دوره موردنظر را انتخاب کنید؛ موتور به‌طور خودکار روش‌ها را ارزیابی می‌کند و مدل نهایی را می‌سازد.</p><p class="help" id="latestMonth"></p><div class="field"><label for="horizon">دوره مقصدِ بدون داده</label><select id="horizon"></select></div><div hidden><select id="cutoff"></select><select id="window"></select><select id="method"><option value="auto">خودکار</option></select></div><div class="run-summary" id="runSummary" aria-live="polite"><div><strong>خلاصه درخواست</strong><p id="runSummaryText">پس از انتخاب بازار، خلاصه درخواست در اینجا نمایش داده می‌شود.</p></div></div><p class="help">روش منتخب بر اساس خطای ارزیابی تاریخی انتخاب می‌شود؛ این خطا تضمین دقت ماه آینده نیست.</p><div class="stage-actions"><button class="btn" id="run">محاسبه پیش‌بینی</button><button class="btn secondary" id="backTarget" type="button">بازگشت به فیلترها</button></div></section>
 </aside><main class="stage-card" id="main" data-panel="4" aria-live="polite" hidden><div class="result-actions"><button class="btn secondary" id="editSelection" type="button">تغییر فیلترها</button><button class="btn secondary" id="editTarget" type="button">تغییر ماه هدف</button><button class="btn secondary" id="newSource" type="button">فایل جدید</button></div><div id="results"><div class="empty"><div class="empty-visual">▤</div><strong>آمادهٔ ساخت پیش‌بینی</strong><p>فایل مستر، بازار و ماه هدف را انتخاب کنید؛ سپس پیش‌بینی و مدل منتخب اینجا نمایش داده می‌شود.</p></div></div></main></div>
 <div class="foot">نتایج بر پایه داده‌های گزارش Retail Audit محاسبه می‌شوند. واحدها از فایل ورودی خوانده می‌شوند و خطای تاریخی به معنی تضمین عملکرد آینده نیست.</div>
 </div><script>
@@ -282,6 +282,12 @@ const decimal=n=>new Intl.NumberFormat('fa-IR',{maximumFractionDigits:1}).format
 const short=n=>{if(Math.abs(n)>=1e9)return persian(n/1e9)+' میلیارد';if(Math.abs(n)>=1e6)return persian(n/1e6)+' میلیون';if(Math.abs(n)>=1e3)return persian(n/1e3)+' هزار';return persian(n)};
 const pmonth=s=>{let [y,m]=s.split('-').map(Number);return y*12+m};
 const nextMonth=(s,h)=>{let d=new Date(Number(s.slice(0,4)),Number(s.slice(5,7))-1+h,1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')};
+const periodName=(end,months=data?.period_months||1)=>{
+  if(months===1)return end;
+  const begin=nextMonth(end,-1);
+  const name=d=>new Intl.DateTimeFormat('en',{month:'short'}).format(new Date(Number(d.slice(0,4)),Number(d.slice(5,7))-1,1));
+  return name(begin)+'–'+name(end)+' '+end.slice(0,4);
+};
 const status=(msg,kind='info')=>{
   el('status').textContent=msg;
   el('status').className='status '+(kind===true?'error':kind);
@@ -344,19 +350,35 @@ function advanceTo(step){
 function selectedFilters(){const filters={};dimNames.forEach((dim,i)=>{const value=el('f'+i)?.value;if(value&&value!=='*')filters[dim]=value});return filters}
 function updateRunSummary(){
   if(!data)return;
-  const filters=selectedFilters(),target=el('horizon').selectedOptions?.[0]?.textContent || nextMonth(data.months.at(-1),Number(el('horizon').value)||1);
+  const filters=selectedFilters(),target=el('horizon').selectedOptions?.[0]?.textContent || periodName(nextMonth(data.months.at(-1),(Number(el('horizon').value)||1)*(data.period_months||1)));
   const selectedCount=data.rows.filter(row=>dimNames.every((key,i)=>!filters[key]||row[i]===filters[key])).length;
-  const parts=[sourceMode==='sample'?'داده نمونه':data.source,el('metric').selectedOptions?.[0]?.textContent||'فروش حجمی',target,
+  const parts=[sourceMode==='sample'?'داده نمونه':data.source,data.periodicity==='bimonthly'?'دوماهه':'ماهانه',el('metric').selectedOptions?.[0]?.textContent||'فروش حجمی',target,
     Object.entries(filters).map(([key,val])=>labels[dimNames.indexOf(key)]+': '+val).join('، ')||'تمام دسته‌بندی‌ها',
     persian(selectedCount)+' سری موجود'];
   el('runSummaryText').textContent=parts.join('  ·  ');
 }
 const choice=(node,values,selected)=>{node.replaceChildren();for(const [value,name] of values){let o=document.createElement('option');o.value=value;o.textContent=name;node.append(o)}if(values.some(x=>x[0]===selected))node.value=selected};
-function makeFilters(){let box=el('filters');box.replaceChildren();dimNames.forEach((dim,i)=>{let div=document.createElement('div');div.className='field';let label=document.createElement('label');label.textContent=labels[i];label.htmlFor='f'+i;let select=document.createElement('select');select.id='f'+i;select.addEventListener('change',()=>{refreshFilters(i+1);invalidateResult();updateRunSummary()});div.append(label,select);box.append(div)})}
-function refreshFilters(from=0){if(!data)return;let rows=data.rows;for(let i=0;i<dimNames.length;i++){let node=el('f'+i);if(i>=from){let prev=node.value;let relevant=rows.filter(row=>{for(let j=0;j<i;j++){let v=el('f'+j).value;if(v!=='*'&&row[j]!==v)return false}return true});let opts=[...new Set(relevant.map(row=>row[i]))].sort((a,b)=>a.localeCompare(b));choice(node,[['*','همه'],...opts.map(v=>[v,v])],prev)}if(node.value!=='*')rows=rows.filter(row=>row[i]===node.value)}}
-function refreshMonths(){if(!data)return;let months=data.months.slice(1);choice(el('cutoff'),months.map(x=>[x,x]),months.at(-1));el('latestMonth').textContent='آخرین ماه موجود: '+months.at(-1)+'؛ فقط ماه‌های بعد از آن برای پیش‌بینی نمایش داده می‌شوند.';refreshWindow();refreshTarget()}
+function makeFilters(){let box=el('filters');box.replaceChildren();dimNames.forEach((dim,i)=>{let div=document.createElement('div');div.className='field';let label=document.createElement('label');label.textContent=dim==='Market'?'سطح مکانی (Market)':labels[i];label.htmlFor='f'+i;let select=document.createElement('select');select.id='f'+i;select.addEventListener('change',()=>{refreshFilters(i+1);invalidateResult();updateRunSummary()});div.append(label,select);box.append(div)})}
+function refreshFilters(from=0){
+  if(!data)return;let rows=data.rows;
+  for(let i=0;i<dimNames.length;i++){
+    const node=el('f'+i);
+    if(i>=from){
+      const prev=node.value;
+      const relevant=rows.filter(row=>dimNames.slice(0,i).every((key,j)=>{
+        const v=el('f'+j).value;return v==='*'||row[j]===v;
+      }));
+      const opts=[...new Set(relevant.map(row=>row[i]))].sort((a,b)=>a.localeCompare(b));
+      const isMarket=dimNames[i]==='Market';
+      const selected=isMarket?(opts.includes(prev)?prev:(opts.includes('City')?'City':opts[0])):prev;
+      choice(node,[...(isMarket?[]:[['*','همه']]),...opts.map(v=>[v,v])],selected);
+    }
+    if(node.value!=='*')rows=rows.filter(row=>row[i]===node.value);
+  }
+}
+function refreshMonths(){if(!data)return;let months=data.months.slice(1);choice(el('cutoff'),months.map(x=>[x,x]),months.at(-1));el('latestMonth').textContent='آخرین دوره موجود: '+periodName(months.at(-1))+'؛ پیش‌بینی فقط برای دوره‌های بعد از آن انجام می‌شود.';refreshWindow();refreshTarget()}
 function refreshWindow(){let n=data.months.indexOf(el('cutoff').value)+1;let old=el('window').value;let vals=[['all','همهٔ ماه‌های موجود'],...[2,3,6,12,24,36].filter(x=>x<=n).map(x=>[String(x),x+' ماه'])];choice(el('window'),vals,old||'2')}
-function refreshTarget(){let old=el('horizon').value,base=el('cutoff').value;choice(el('horizon'),[1,2,3].map(h=>[String(h),nextMonth(base,h)+'  ('+h+' ماه بعد)']),old||'1')}
+function refreshTarget(){let old=el('horizon').value,base=el('cutoff').value,step=data?.period_months||1;choice(el('horizon'),[1,2,3].map(h=>[String(h),periodName(nextMonth(base,h*step),step)+' ('+h+' دوره بعد)']),old||'1')}
 function renderSchemaPreview(schema){
   const preview=el('schemaPreview'),edit=el('editMapping');
   preview.replaceChildren();
@@ -389,10 +411,11 @@ function renderSchemaPreview(schema){
 function setData(next,initial=false){
   sourceMode=pendingSource==='builtin'||(initial&&String(next.source).includes('نمونه'))?'sample':'file';
   data=next;schemaNeedsReview=false;resultReady=false;maxStage=0;
+  el('periodicity').value=next.periodicity||'monthly';
   dimNames=Array.isArray(next.dimensions)&&next.dimensions.length?next.dimensions:[...defaultDimNames];
   labels=dimNames.map(name=>defaultDimNames.includes(name)?defaultDimLabels[defaultDimNames.indexOf(name)]:name);
   makeFilters();el('mappingPanel').hidden=true;
-  const description=next.source+' · '+next.months[0]+' تا '+next.months.at(-1)+' · '+persian(next.series_count)+' ردیف شهری';
+  const description=next.source+' · '+periodName(next.months[0])+' تا '+periodName(next.months.at(-1))+' · '+persian(next.series_count)+' سری در سطح‌های مکانی فایل';
   el('source').textContent=description;
   el('schemaSource').textContent=description;
   el('sourceKind').hidden=false;
@@ -405,7 +428,7 @@ function setData(next,initial=false){
     'فایل با موفقیت خوانده شد. برای بررسی ستون‌ها روی «ادامه» بزنید.','success');
 }
 async function post(url,body,binary=false,mapping=null){
-  const headers=binary?{'X-Filename':encodeURIComponent(body.name)}:{'Content-Type':'application/json'};
+  const headers=binary?{'X-Filename':encodeURIComponent(body.name),'X-Periodicity':el('periodicity').value}:{'Content-Type':'application/json'};
   if(binary&&mapping)headers['X-Mapping']=encodeURIComponent(JSON.stringify(mapping));
   let res;
   try{res=await fetch(url,{method:'POST',body:binary?body:JSON.stringify(body),headers})}
@@ -468,7 +491,7 @@ for(const [id,label] of [['volume_kg','نام ردیف حجم فروش'],['value
 }
 function currentMapping(){let fields={};for(const field of ['Market',...defaultDimNames,'Measure']){let v=el('map_'+field)?.value;if(v)fields[field]=v}let measure_values={};for(const key of ['volume_kg','value_1000_toman']){let v=el('map_'+key)?.value.trim();if(v)measure_values[key]=v}let units={};for(const [id,key] of [['volume_unit','volume_kg'],['value_unit','value_1000_toman']]){let v=el('map_'+id)?.value.trim();if(v)units[key]=v}const dimension_columns=Array.from(document.querySelectorAll('[data-dimension-column="true"]'))
   .filter(node=>node.checked).map(node=>node.value);
-return {fields,measure_values,units,dimension_columns}}
+return {fields,measure_values,units,dimension_columns,periodicity:el('periodicity').value}}
 function applyMapping(){let mapping=currentMapping();
   if(!mapping.dimension_columns.includes(mapping.fields.City||'City')||
      !mapping.dimension_columns.includes(mapping.fields.Brand||'Brand')){
@@ -476,7 +499,7 @@ function applyMapping(){let mapping=currentMapping();
   }
   recheckingMapping=true;
   if(pendingSource==='upload'){let f=selectedUpload;if(f)operation('فایل با نگاشت جدید خوانده می‌شود…',()=>post('/api/upload',f,true,mapping),'upload')}
-  else operation('فایل با نگاشت جدید خوانده می‌شود…',()=>post('/api/load',{path:el('localPath').value,mapping}),'path')}
+  else operation('فایل با نگاشت جدید خوانده می‌شود…',()=>post('/api/load',{path:el('localPath').value,mapping,periodicity:el('periodicity').value}),'path')}
 function lockButtons(b){
   busy=b;
   document.querySelectorAll('.wizard-layout button, .wizard-layout select, .wizard-layout input')
@@ -536,8 +559,18 @@ zone.addEventListener('dragleave',e=>{e.preventDefault();dragDepth=Math.max(0,dr
 zone.addEventListener('drop',e=>{e.preventDefault();dragDepth=0;zone.classList.remove('drag-active');if(!busy){const file=e.dataTransfer?.files?.[0];if(file)setUpload(file,true)}});
 document.addEventListener('dragover',e=>{if(e.dataTransfer?.types?.includes('Files'))e.preventDefault()});
 document.addEventListener('drop',e=>{if(e.dataTransfer?.files?.length)e.preventDefault()});
-el('loadPath').onclick=()=>operation('فایل محلی در حال خواندن است…',()=>post('/api/load',{path:el('localPath').value}),'path');
-el('sample').onclick=()=>operation('نمونه بارگذاری می‌شود…',()=>post('/api/load',{builtin:true}),'builtin');
+el('loadPath').onclick=()=>operation('فایل محلی در حال خواندن است…',()=>post('/api/load',{path:el('localPath').value,periodicity:el('periodicity').value}),'path');
+el('sample').onclick=()=>operation('نمونه ماهانه بارگذاری می‌شود…',()=>post('/api/load',{builtin:true}),'builtin');
+el('periodicity').onchange=()=>{
+  if(data&&el('periodicity').value!==data.periodicity){
+    data=null;maxStage=0;resultReady=false;
+    el('source').textContent='نوع دوره تغییر کرد؛ فایل را دوباره بارگذاری کنید تا با تناوب جدید خوانده شود.';
+    el('sourceKind').hidden=true;
+    el('results').innerHTML='';
+    showStage(0,true);updateWizard();
+    status('برای خواندن '+(el('periodicity').value==='bimonthly'?'داده دوماهه':'داده ماهانه')+'، فایل را دوباره انتخاب کنید.');
+  }
+};
 el('cutoff').onchange=()=>{refreshWindow();refreshTarget();invalidateResult()};
 el('metric').onchange=()=>{let recommended=el('metric').value==='volume_kg'?'2':'6';if([...el('window').options].some(o=>o.value===recommended))el('window').value=recommended;invalidateResult();updateRunSummary()};
 function chart(result){
