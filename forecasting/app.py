@@ -10,9 +10,33 @@ HOST='127.0.0.1';PORT=8765
 HERE=Path(__file__).parent
 UPLOADS=ROOT/'outputs/forecast_app/uploads'
 UPLOADS.mkdir(parents=True,exist_ok=True)
-state={'dataset':Dataset.builtin()}
+try:
+    initial_dataset=Dataset.builtin()
+except FileNotFoundError:
+    initial_dataset=None
+state={'dataset':initial_dataset}
 lock=threading.RLock()
 training_lock=threading.Lock()
+
+def cleanup_upload(path):
+    """Best-effort cleanup; a transient Windows file lock must not fail an upload."""
+    for attempt in range(6):
+        try:
+            path.unlink(missing_ok=True)
+            return
+        except PermissionError:
+            time.sleep(0.2 * (attempt + 1))
+    # Windows antivirus / file indexers may release the XLSX later.
+    def retry():
+        for _ in range(30):
+            time.sleep(1)
+            try:
+                path.unlink(missing_ok=True)
+                return
+            except PermissionError:
+                pass
+        print(f'WARNING: temporary upload still locked; delete when unlocked: {path}',flush=True)
+    threading.Thread(target=retry,daemon=True).start()
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,fmt,*args):print('%s %s'%(self.address_string(),fmt%args),flush=True)
@@ -30,7 +54,10 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/api/health':
             self.answer({'service':'ra-forecast','ready':True});return
         if path=='/api/data':
-            with lock:self.answer(state['dataset'].options())
+            with lock:dataset=state['dataset']
+            self.answer(dataset.options() if dataset is not None else {
+                'ready':False,'message':'فایل نمونه در این رایانه موجود نیست؛ فایل مستر خود را بارگذاری کنید.'
+            })
             return
         if path in ['/','/index.html']:
             raw=(HERE/'app_ui.html').read_bytes()
@@ -59,19 +86,7 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     dataset=Dataset.file(dest,mapping);dataset.source=name
                 finally:
-                    # Antivirus/indexers on Windows may hold uploaded XLSX files briefly.
-                    # Do not allow a transient cleanup lock to discard a parsed dataset.
-                    for attempt in range(6):
-                        try:
-                            dest.unlink(missing_ok=True)
-                            break
-                        except PermissionError:
-                            if attempt == 5:
-                                raise PermissionError(
-                                    'فایل موقت آپلود هنوز توسط ویندوز یا برنامه دیگری قفل است. '
-                                    'فایل اصلی را در قسمت «مسیر فایل روی همین رایانه» وارد و «خواندن» را بزنید.'
-                                )
-                            time.sleep(0.3 * (attempt + 1))
+                    cleanup_upload(dest)
                 with lock:state['dataset']=dataset
                 self.answer(dataset.options());return
             body=json.loads(self.rfile.read(n))
@@ -79,7 +94,7 @@ class Handler(BaseHTTPRequestHandler):
                 if body.get('builtin'):
                     dataset=Dataset.builtin()
                 else:
-                    loc=Path(body.get('path',''))
+                    loc=Path(str(body.get('path','')).strip().strip('"').strip("'"))
                     if not loc.is_file() or loc.suffix.lower()!='.xlsx':raise ValueError('مسیر فایل xlsx معتبر نیست.')
                     dataset=Dataset.file(loc,body.get('mapping'))
                 with lock:state['dataset']=dataset
@@ -90,6 +105,7 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/predict':
                 from auto_engine import future_request
                 with lock:dataset=state['dataset']
+                if dataset is None:raise ValueError('ابتدا یک فایل مستر بارگذاری کنید.')
                 with training_lock:result=future_request(dataset,body)
                 self.answer(result);return
             self.send_error(404)
