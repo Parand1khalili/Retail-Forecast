@@ -34,7 +34,7 @@ def tiny_workbook(path, index_heading="Index Name"):
     ]:
         rows.append(base[:3] + [size] + base[4:] + ["Volume Sales (L)", "0"] + list(map(str, vol)))
         rows.append(base[:3] + [size] + base[4:] + ["Value Sales (Toman)", "0"] + list(map(str, money)))
-    # The row below is a different report level and must not double count city sales.
+    # The row below belongs to a distinct Market level and must remain separate.
     rows.append(["OutletType", "Kiosk", "Sparkling Water", "330 ml", "Can",
                  "Aqua", "Volume Sales (L)", "0", "999", "999", "999"])
     rows.append(["OutletType", "Kiosk", "Sparkling Water", "330 ml", "Can",
@@ -89,9 +89,12 @@ class DynamicCategoriesTest(unittest.TestCase):
     def test_index_name_and_all_preceding_dimensions_are_preserved(self):
         d = Dataset.file(self.path)
         self.assertEqual(d.months, ["2026-05", "2026-06", "2026-07"])
-        self.assertEqual(len(d.meta), 2)
-        self.assertEqual(d.volume[:, -1].sum(), 200)
-        self.assertEqual(d.value[:, -1].sum(), 2000)
+        self.assertEqual(len(d.meta), 3)
+        self.assertEqual(len(d.for_market('City').meta), 2)
+        self.assertEqual(d.for_market('City').volume[:, -1].sum(), 200)
+        self.assertEqual(d.for_market('City').value[:, -1].sum(), 2000)
+        self.assertEqual(d.for_market('OutletType').volume[:, -1].sum(), 999)
+        self.assertIn('Market', d.all_dimensions())
         for name in ["Element Description", "SKUSize", "SKUPackage"]:
             self.assertIn(name, d.all_dimensions())
             self.assertIn(name, d.options()["dimensions"])
@@ -109,8 +112,9 @@ class DynamicCategoriesTest(unittest.TestCase):
         keep = ["Location&Channel", "Element Description", "SKUPackage", "Brand"]
         d = Dataset.file(self.path, {"dimension_columns": keep})
         self.assertNotIn("SKUSize", d.all_dimensions())
-        self.assertEqual(len(d.meta), 1)
-        self.assertEqual(d.volume[0, -1], 200)
+        self.assertEqual(len(d.meta), 2)
+        self.assertEqual(len(d.for_market('City').meta), 1)
+        self.assertEqual(d.for_market('City').volume[0, -1], 200)
 
     def test_required_city_and_brand_cannot_be_excluded(self):
         with self.assertRaises(SchemaError):
@@ -124,7 +128,8 @@ class DynamicCategoriesTest(unittest.TestCase):
         self.assertIn("Index Label", cm.exception.prompt["dimension_candidates"])
         d = Dataset.file(unknown, {"fields": {"Measure": "Index Label"}})
         self.assertEqual(d.months[-1], "2026-07")
-        self.assertEqual(len(d.meta), 2)
+        self.assertEqual(len(d.meta), 3)
+        self.assertEqual(len(d.for_market('City').meta), 2)
 
     def test_detected_columns_reach_catboost_features(self):
         from auto_engine import Features
