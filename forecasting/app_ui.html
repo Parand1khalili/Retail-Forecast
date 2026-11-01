@@ -73,17 +73,30 @@ input:focus,select:focus{outline:2px solid #b5dce8;outline-offset:1px}
 .foot{padding:0 4px;margin-top:20px;line-height:2.2}
 @media(max-width:900px){.grid{grid-template-columns:1fr}.wrap{padding:16px}.header-content{align-items:flex-start}.header-side{display:none}}
 @media(max-width:580px){.mast{padding:22px}.mast h1{font-size:23px}.card{padding:18px}.kpis,.details{grid-template-columns:1fr}.fileline{flex-wrap:wrap}.fileline input{min-width:200px}.empty{min-height:300px}}
+
+.schema-preview{margin:12px 0;padding:12px 13px;border:1px solid #d5e9e8;border-radius:12px;background:#f1faf8}
+.schema-preview .schema-title{font-size:12px;font-weight:700;color:#1d6265;margin-bottom:7px}
+.schema-preview .schema-caption{color:#557889;font-size:11px;margin-top:6px}
+.schema-preview .schema-tags{display:flex;flex-wrap:wrap;gap:5px}
+.schema-preview .schema-tags span{font-size:11px;border:1px solid #d4e4ee;background:#fff;border-radius:6px;padding:2px 7px;color:#385772}
+.map-dims{border:1px solid #e0e9f2;border-radius:11px;padding:12px 11px;margin:12px 0;background:#fbfdff}
+.map-dims .map-dims-title{font-size:12px;font-weight:700;margin-bottom:7px;color:#264e6a}
+.map-dim{display:flex;gap:8px;align-items:center;padding:5px 0;font-size:12px;cursor:pointer;line-height:1.5}
+.map-dim input{accent-color:#117d89;width:16px;height:16px;flex-shrink:0}
+.map-fields-header{margin-top:12px;color:#294a6c;font-size:12px;font-weight:700}
+@media(max-width:580px){.schema-preview .schema-tags span{font-size:10px}}
 </style></head><body><div class="wrap">
 <header class="mast"><div class="header-content"><div><div class="eyebrow">EMRC / RETAIL AUDIT / FORECASTING</div><h1>پیش‌بینی فروش محصولات</h1><p>فایل مستر را وارد کنید، بازار و ماه مقصد را انتخاب کنید و نتیجه را همراه با روش منتخب و خطای اعتبارسنجی تاریخی ببینید.</p></div><div class="header-side"><strong>Forecast Studio</strong><span>1–3 MONTH HORIZON</span></div></div></header>
 <div class="grid"><aside class="card" aria-label="تنظیمات پیش‌بینی">
-<section class="section"><h2><span class="step">01</span> دادهٔ ورودی</h2><div class="source source-indicator" id="source" aria-live="polite">در حال بررسی دادهٔ موجود…</div><div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="انتخاب یا رها کردن فایل مستر اکسل"><span class="drop-icon" aria-hidden="true">⇧</span><strong>فایل Excel را اینجا رها کنید</strong><span>یا <span class="pick-link">برای انتخاب فایل کلیک کنید</span></span><span>فقط .xlsx · حداکثر ۲۲۰ مگابایت</span></div><input class="file-input" type="file" id="file" accept=".xlsx"><div id="selectedFile" class="selected-file" hidden></div><button id="upload" class="btn full" disabled>خواندن فایل انتخاب‌شده</button><details class="optional-path"><summary>راه دیگر: خواندن از مسیر فایل در رایانه</summary><div class="field"><label for="localPath">مسیر کامل فایل .xlsx روی رایانه اجراکننده برنامه</label><div class="fileline"><input type="text" id="localPath" placeholder="H:\folder\master.xlsx"><button class="btn secondary" id="loadPath">خواندن</button></div></div></details><p class="help">نام ستون‌ها خودکار تشخیص داده می‌شود؛ اگر ساختار متفاوت باشد، می‌توانید نگاشت ستون‌ها را تأیید کنید.</p><div id="mappingPanel" hidden></div><button id="sample" class="btn secondary full">بازگشت به نمونهٔ ماست</button></section>
+<section class="section"><h2><span class="step">01</span> دادهٔ ورودی</h2><div class="source source-indicator" id="source" aria-live="polite">در حال بررسی دادهٔ موجود…</div><div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="انتخاب یا رها کردن فایل مستر اکسل"><span class="drop-icon" aria-hidden="true">⇧</span><strong>فایل Excel را اینجا رها کنید</strong><span>یا <span class="pick-link">برای انتخاب فایل کلیک کنید</span></span><span>فقط .xlsx · حداکثر ۲۲۰ مگابایت</span></div><input class="file-input" type="file" id="file" accept=".xlsx"><div id="selectedFile" class="selected-file" hidden></div><button id="upload" class="btn full" disabled>خواندن فایل انتخاب‌شده</button><details class="optional-path"><summary>راه دیگر: خواندن از مسیر فایل در رایانه</summary><div class="field"><label for="localPath">مسیر کامل فایل .xlsx روی رایانه اجراکننده برنامه</label><div class="fileline"><input type="text" id="localPath" placeholder="H:\folder\master.xlsx"><button class="btn secondary" id="loadPath">خواندن</button></div></div></details><p class="help">نام ستون‌ها خودکار تشخیص داده می‌شود؛ اگر ساختار متفاوت باشد، می‌توانید نگاشت ستون‌ها را تأیید کنید.</p><div id="schemaPreview" class="schema-preview" hidden></div><button class="btn secondary full" id="editMapping" hidden type="button">اصلاح دستی ستون‌ها</button><div id="mappingPanel" hidden></div><button id="sample" class="btn secondary full">بازگشت به نمونهٔ ماست</button></section>
 <section class="section"><h2><span class="step">02</span> انتخاب بازار و شاخص</h2><div class="field"><label for="metric">شاخص</label><select id="metric"><option value="volume_kg">فروش حجمی، کیلوگرم</option><option value="value_1000_toman">فروش ریالی، هزار تومان</option></select></div><div id="filters"></div><p class="help">«همه» یعنی جمع همان سطح؛ مثلاً شهر تهران و همهٔ برندها. گزینه‌ها از ترکیب‌های موجود در فایل ساخته می‌شوند.</p></section>
 <section class="section"><h2><span class="step">03</span> تعیین ماه هدف</h2><p class="help" id="latestMonth"></p><div class="field"><label for="horizon">ماه مقصدِ بدون داده</label><select id="horizon"></select></div><div hidden><select id="cutoff"></select><select id="window"></select><select id="method"><option value="auto">خودکار</option></select></div><p class="help">سامانه روش و طول تاریخچه را با آزمون ماه‌های گذشته انتخاب می‌کند و سپس با دادهٔ موجود آموزش می‌بیند. آموزش اولیه ممکن است چند دقیقه طول بکشد؛ نتیجهٔ آموزش ذخیره می‌شود.</p><button class="btn full" id="run">آموزش خودکار و پیش‌بینی</button><div class="status" id="status"></div></section>
 </aside><main class="card" id="main" aria-live="polite"><div class="empty"><div class="empty-visual">▤</div><strong>آمادهٔ ساخت پیش‌بینی</strong><p>فایل مستر، بازار و ماه هدف را انتخاب کنید؛ سپس پیش‌بینی و مدل منتخب اینجا نمایش داده می‌شود.</p></div></main></div>
 <div class="foot">واحد هر شاخص از فایل خوانده می‌شود؛ در نمونهٔ ماست مبلغ بر حسب «هزار تومان» است. صفر در داده، مشاهده‌نشدن در بازار بررسی‌شده است. نتیجه به برآورد منتشرشدهٔ RA مربوط می‌شود و فاصلهٔ انتشار گزارش تا زمان واقعی را باید هنگام استفاده در نظر گرفت.</div>
 </div><script>
-const dimNames=['City','Company','Brand','SubBrand','Subcategory','Subcategory2','Subcategory3','Subcategory4'];
-const labels=['شهر','کمپانی','برند','زیر‌برند','ساب‌کتگوری ۱','ساب‌کتگوری ۲','ساب‌کتگوری ۳','ساب‌کتگوری ۴'];
+const defaultDimNames=['City','Company','Brand','SubBrand','Subcategory','Subcategory2','Subcategory3','Subcategory4'];
+const defaultDimLabels=['شهر','کمپانی','برند','زیر‌برند','ساب‌کتگوری ۱','ساب‌کتگوری ۲','ساب‌کتگوری ۳','ساب‌کتگوری ۴'];
+let dimNames=[...defaultDimNames],labels=[...defaultDimLabels];
 let data=null,pendingSource=null,selectedUpload=null,busy=false;const el=id=>document.getElementById(id);
 const persian=n=>new Intl.NumberFormat('fa-IR',{maximumFractionDigits:0}).format(n);
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -98,11 +111,52 @@ function refreshFilters(from=0){if(!data)return;let rows=data.rows;for(let i=0;i
 function refreshMonths(){if(!data)return;let months=data.months.slice(1);choice(el('cutoff'),months.map(x=>[x,x]),months.at(-1));el('latestMonth').textContent='آخرین ماه موجود: '+months.at(-1)+'؛ فقط ماه‌های بعد از آن برای پیش‌بینی نمایش داده می‌شوند.';refreshWindow();refreshTarget()}
 function refreshWindow(){let n=data.months.indexOf(el('cutoff').value)+1;let old=el('window').value;let vals=[['all','همهٔ ماه‌های موجود'],...[2,3,6,12,24,36].filter(x=>x<=n).map(x=>[String(x),x+' ماه'])];choice(el('window'),vals,old||'2')}
 function refreshTarget(){let old=el('horizon').value,base=el('cutoff').value;choice(el('horizon'),[1,2,3].map(h=>[String(h),nextMonth(base,h)+'  ('+h+' ماه بعد)']),old||'1')}
-function setData(next){data=next;el('mappingPanel').hidden=true;el('run').disabled=false;el('source').textContent=next.source+' · '+next.months[0]+' تا '+next.months.at(-1)+' · '+persian(next.series_count)+' ردیف شهری';el('metric').options[0].textContent='فروش حجمی، '+next.units.volume_kg;el('metric').options[1].textContent='فروش ریالی، '+next.units.value_1000_toman;refreshFilters();refreshMonths();status('داده آماده است.');el('main').innerHTML='<div class="empty"><div class="empty-visual">✓</div><strong>داده آماده است</strong><p>فیلترها و ماه مقصد را انتخاب کنید و پیش‌بینی را محاسبه کنید.</p></div>'}
+function renderSchemaPreview(schema){
+  const preview=el('schemaPreview'),edit=el('editMapping');
+  preview.replaceChildren();
+  if(!schema||!Array.isArray(schema.dimension_columns)){preview.hidden=true;edit.hidden=true;return}
+  preview.hidden=false;edit.hidden=false;
+  const title=document.createElement('div');title.className='schema-title';title.textContent='ستون‌های شناسایی‌شده به‌صورت خودکار';preview.append(title);
+  const tagbox=document.createElement('div');tagbox.className='schema-tags';
+  for(const name of schema.dimension_columns){const tag=document.createElement('span');tag.textContent=name;tagbox.append(tag)}
+  preview.append(tagbox);
+  const cap=document.createElement('div');cap.className='schema-caption';
+  cap.textContent='شاخص: '+(schema.measure_column||'نامشخص')+' · '+(schema.date_columns||[]).length+' ستون ماهانه. اگر دسته‌ها درست نیستند، «اصلاح دستی ستون‌ها» را بزنید.';
+  preview.append(cap);
+}
+function setData(next){data=next;dimNames=Array.isArray(next.dimensions)&&next.dimensions.length?next.dimensions:[...defaultDimNames];
+  labels=dimNames.map(name=>defaultDimNames.includes(name)?defaultDimLabels[defaultDimNames.indexOf(name)]:name);
+  makeFilters();renderSchemaPreview(next.schema);el('mappingPanel').hidden=true;el('run').disabled=false;el('source').textContent=next.source+' · '+next.months[0]+' تا '+next.months.at(-1)+' · '+persian(next.series_count)+' ردیف شهری';el('metric').options[0].textContent='فروش حجمی، '+next.units.volume_kg;el('metric').options[1].textContent='فروش ریالی، '+next.units.value_1000_toman;refreshFilters();refreshMonths();status('داده آماده است.');el('main').innerHTML='<div class="empty"><div class="empty-visual">✓</div><strong>داده آماده است</strong><p>فیلترها و ماه مقصد را انتخاب کنید و پیش‌بینی را محاسبه کنید.</p></div>'}
 async function post(url,body,binary=false,mapping=null){let headers=binary?{'X-Filename':encodeURIComponent(body.name)}:{'Content-Type':'application/json'};if(binary&&mapping)headers['X-Mapping']=encodeURIComponent(JSON.stringify(mapping));let opts={method:'POST',body:binary?body:JSON.stringify(body),headers};let res=await fetch(url,opts);let json=await res.json();if(res.status===422&&json.mapping_required)return json;if(!res.ok)throw Error(json.error||'خطا در پردازش');return json}
-function showMapping(info){let box=el('mappingPanel');box.replaceChildren();box.hidden=false;let title=document.createElement('h3');title.textContent='نگاشت سرتیترها: '+info.sheet;box.append(title);let intro=document.createElement('p');intro.className='help';intro.textContent=info.message;box.append(intro);let names={Market:'نوع بازار (اختیاری)',City:'شهر/محل',Company:'کمپانی',Brand:'برند',SubBrand:'زیر‌برند',Subcategory:'ساب‌کتگوری ۱',Subcategory2:'ساب‌کتگوری ۲',Subcategory3:'ساب‌کتگوری ۳',Subcategory4:'ساب‌کتگوری ۴',Measure:'ستون شاخص فروش'};for(const field of info.fields){let wrap=document.createElement('div');wrap.className='field';let label=document.createElement('label');label.textContent=names[field]+(info.required.includes(field)?' *':'');let sel=document.createElement('select');sel.id='map_'+field;choice(sel,[['','انتخاب نشده'],...info.headers.map(x=>[x,x])],info.suggested[field]||'');wrap.append(label,sel);box.append(wrap)}let examples=document.createElement('p');examples.className='help';examples.textContent=info.measure_examples.length?'نمونهٔ نام شاخص‌ها: '+info.measure_examples.join('، '):'نام ردیف‌های حجم و مبلغ را مطابق فایل وارد کنید.';box.append(examples);for(const [id,label] of [['volume_kg','نام ردیف حجم فروش'],['value_1000_toman','نام ردیف مبلغ فروش'],['volume_unit','واحد حجم؛ مثلاً kg یا لیتر'],['value_unit','واحد مبلغ؛ مثلاً هزار تومان']]){let wrap=document.createElement('div');wrap.className='field';let lab=document.createElement('label');lab.textContent=label;let input=document.createElement('input');input.type='text';input.id='map_'+id;wrap.append(lab,input);box.append(wrap)}let apply=document.createElement('button');apply.className='btn full';apply.textContent='تأیید نگاشت و خواندن فایل';apply.onclick=applyMapping;box.append(apply);status('ستون‌های ناشناخته را بررسی و تعیین کنید.');box.scrollIntoView({block:'center',behavior:'smooth'})}
-function currentMapping(){let fields={};for(const field of ['Market',...dimNames,'Measure']){let v=el('map_'+field)?.value;if(v)fields[field]=v}let measure_values={};for(const key of ['volume_kg','value_1000_toman']){let v=el('map_'+key)?.value.trim();if(v)measure_values[key]=v}let units={};for(const [id,key] of [['volume_unit','volume_kg'],['value_unit','value_1000_toman']]){let v=el('map_'+id)?.value.trim();if(v)units[key]=v}return {fields,measure_values,units}}
-function applyMapping(){let mapping=currentMapping();if(pendingSource==='upload'){let f=selectedUpload;if(f)operation('فایل با نگاشت جدید خوانده می‌شود…',()=>post('/api/upload',f,true,mapping),'upload')}else operation('فایل با نگاشت جدید خوانده می‌شود…',()=>post('/api/load',{path:el('localPath').value,mapping}),'path')}
+function showMapping(info){let box=el('mappingPanel');box.replaceChildren();box.hidden=false;let title=document.createElement('h3');title.textContent='نگاشت سرتیترها: '+info.sheet;box.append(title);let intro=document.createElement('p');intro.className='help';intro.textContent=info.message;box.append(intro);let names={Market:'نوع بازار (اختیاری)',City:'شهر/محل',Company:'کمپانی',Brand:'برند',SubBrand:'زیر‌برند',Subcategory:'ساب‌کتگوری ۱',Subcategory2:'ساب‌کتگوری ۲',Subcategory3:'ساب‌کتگوری ۳',Subcategory4:'ساب‌کتگوری ۴',Measure:'ستون شاخص فروش'};for(const field of info.fields){let wrap=document.createElement('div');wrap.className='field';let label=document.createElement('label');label.textContent=names[field]+(info.required.includes(field)?' *':'');let sel=document.createElement('select');sel.id='map_'+field;choice(sel,[['','انتخاب نشده'],...info.headers.map(x=>[x,x])],info.suggested[field]||'');wrap.append(label,sel);box.append(wrap)}let examples=document.createElement('p');examples.className='help';examples.textContent=info.measure_examples.length?'نمونهٔ نام شاخص‌ها: '+info.measure_examples.join('، '):'نام ردیف‌های حجم و مبلغ را مطابق فایل وارد کنید.';box.append(examples);
+if(Array.isArray(info.dimension_candidates)&&info.dimension_candidates.length){
+  const group=document.createElement('div');group.className='map-dims';
+  const heading=document.createElement('div');heading.className='map-dims-title';
+  heading.textContent='ستون‌های دسته‌بندی (قبل از '+(info.measure_column||'Measure')+')';
+  group.append(heading);
+  const selected=new Set(info.dimension_columns||info.dimension_candidates);
+  info.dimension_candidates.forEach((name,i)=>{
+    const row=document.createElement('label');row.className='map-dim';
+    const check=document.createElement('input');check.type='checkbox';
+    check.id='map_dim_'+i;check.value=name;check.checked=selected.has(name);
+    check.dataset.dimensionColumn='true';
+    const text=document.createElement('span');text.textContent=name;
+    row.append(check,text);group.append(row);
+  });
+  const hint=document.createElement('p');hint.className='help';
+  hint.textContent='برای حفظ صحت پیش‌بینی، ستون‌های شهر و برند باید جزو دسته‌بندی‌ها باقی بمانند.';
+  group.append(hint);box.append(group);
+}
+for(const [id,label] of [['volume_kg','نام ردیف حجم فروش'],['value_1000_toman','نام ردیف مبلغ فروش'],['volume_unit','واحد حجم؛ مثلاً kg یا لیتر'],['value_unit','واحد مبلغ؛ مثلاً هزار تومان']]){let wrap=document.createElement('div');wrap.className='field';let lab=document.createElement('label');lab.textContent=label;let input=document.createElement('input');input.type='text';input.id='map_'+id;wrap.append(lab,input);box.append(wrap)}let apply=document.createElement('button');apply.className='btn full';apply.textContent='تأیید نگاشت و خواندن فایل';apply.onclick=applyMapping;box.append(apply);status('ستون‌های ناشناخته را بررسی و تعیین کنید.');box.scrollIntoView({block:'center',behavior:'smooth'})}
+function currentMapping(){let fields={};for(const field of ['Market',...dimNames,'Measure']){let v=el('map_'+field)?.value;if(v)fields[field]=v}let measure_values={};for(const key of ['volume_kg','value_1000_toman']){let v=el('map_'+key)?.value.trim();if(v)measure_values[key]=v}let units={};for(const [id,key] of [['volume_unit','volume_kg'],['value_unit','value_1000_toman']]){let v=el('map_'+id)?.value.trim();if(v)units[key]=v}const dimension_columns=Array.from(document.querySelectorAll('[data-dimension-column="true"]'))
+  .filter(node=>node.checked).map(node=>node.value);
+return {fields,measure_values,units,dimension_columns}}
+function applyMapping(){let mapping=currentMapping();
+  if(!mapping.dimension_columns.includes(mapping.fields.City||'City')||
+     !mapping.dimension_columns.includes(mapping.fields.Brand||'Brand')){
+    status('ستون‌های City و Brand باید در دسته‌بندی‌ها انتخاب شده باشند.',true);return;
+  }
+  if(pendingSource==='upload'){let f=selectedUpload;if(f)operation('فایل با نگاشت جدید خوانده می‌شود…',()=>post('/api/upload',f,true,mapping),'upload')}else operation('فایل با نگاشت جدید خوانده می‌شود…',()=>post('/api/load',{path:el('localPath').value,mapping}),'path')}
 function lockButtons(b){busy=b;document.querySelectorAll('aside button,aside select,aside input').forEach(node=>node.disabled=b);if(!b)el('upload').disabled=!selectedUpload;if(!b&&!data)el('run').disabled=true;el('dropzone').setAttribute('aria-disabled',String(b));}
 async function operation(msg,fn,source=null){if(busy)return;try{lockButtons(true);status(msg);pendingSource=source;let result=await fn();if(result.mapping_required)showMapping(result);else setData(result)}catch(e){status(e.message,true)}finally{lockButtons(false)}}
 function setUpload(file,auto=false){
@@ -119,6 +173,7 @@ function uploadSelected(){
   if(!selectedUpload){status('ابتدا فایل .xlsx را انتخاب کنید.',true);return}
   operation('در حال خواندن و اعتبارسنجی فایل '+selectedUpload.name+'…',()=>post('/api/upload',selectedUpload,true),'upload');
 }
+el('editMapping').onclick=()=>{if(data?.schema){showMapping(data.schema)}else status('برای این داده، مشخصات ستون‌های Excel موجود نیست.',true)};
 el('upload').onclick=uploadSelected;
 el('file').addEventListener('change',event=>{const f=event.target.files?.[0];if(f)setUpload(f,true)});
 const zone=el('dropzone');
