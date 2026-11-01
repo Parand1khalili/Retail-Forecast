@@ -172,8 +172,6 @@ def parse_master(path,mapping=None):
         a[:,:,jj]=0
         for key,val in series.items():a[:,index[key],jj]=val
     if preview is not None:
-        preview['dimension_columns']=[name for name in preview['dimension_columns']
-                                      if normalized(name) in {normalized(d) for d in dims}]
         preview['shown_dimensions']=[d for d in dims if d in shown_dimensions or d not in DIMS]
     return Dataset(np.array(keys,dtype=str),a[0],a[1],dates,Path(path).name,
                    units['volume_kg'],units['value_1000_toman'],dims,preview)
