@@ -73,7 +73,9 @@ def parse_master(path,mapping=None):
             if len(set(months.values()))!=len(months):
                 raise ValueError(f'در شیت {sh.attrib["name"]} چند ستون برای یک ماه وجود دارد؛ ستون درست را مشخص کنید.')
             fields,_,categories,detected_months,_=detect_layout(head,mapping)
-            if any(field not in fields for field in REQUIRED) or len(detected_months)<2:
+            if (any(field not in fields for field in REQUIRED) or
+                any(fields[field] not in categories for field in ['City','Brand'] if field in fields) or
+                len(detected_months)<2):
                 if pending_prompt is None:
                     pending_prompt=mapping_prompt(sh.attrib['name'],head,fields,
                                                   category_columns=categories,dates=detected_months)
@@ -86,7 +88,7 @@ def parse_master(path,mapping=None):
             if len({normalized(name) for name,_ in extras})!=len(extras):
                 raise ValueError('نام ستون‌های دسته‌بندی تکراری است؛ عنوان‌های متفاوت تعیین کنید.')
             for name,_ in extras:dimension_labels.setdefault(normalized(name),name)
-            shown_dimensions.update(field for field in DIMS if field in fields)
+            shown_dimensions.update(field for field in DIMS if field in fields and fields[field] in categories)
             ordered=sorted(months)
             bykey=defaultdict(lambda:np.zeros((2,len(ordered)),dtype=float))
             metric_keys=[set(),set()]
@@ -101,7 +103,7 @@ def parse_master(path,mapping=None):
                 if kind is None:continue
                 metric_index=0 if kind=='volume_kg' else 1
                 labels[kind]=str(metric)
-                key=tuple(str(vals.get(fields[dim],'')).strip() if dim in fields else 'Not specified'
+                key=tuple(str(vals.get(fields[dim],'')).strip() if dim in fields and fields[dim] in categories else 'Not specified'
                           for dim in DIMS)+tuple(str(vals.get(i,'')).strip() for _,i in extras)
                 if not key[0] or not key[2]:continue
                 metric_keys[metric_index].add(key)
