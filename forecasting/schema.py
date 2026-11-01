@@ -43,8 +43,23 @@ def month(value):
     if m:return f'{int(m.group(2)):04d}-{int(m.group(1)):02d}'
     return None
 
-def months_in_header(head):
-    found={i:month(v) for i,v in head.items()}
+def period(value,periodicity='monthly'):
+    """Canonical period-end month; a two-month column represents one observation."""
+    if periodicity=='monthly':return month(value)
+    if periodicity!='bimonthly':raise ValueError('نوع دوره فقط ماهانه یا دوماهه است.')
+    text=unicodedata.normalize('NFKC',str(value or '')).translate(PERSIAN_DIGITS).strip().lower()
+    match=re.fullmatch(r'([a-z]+)\\s*[-–—]\\s*([a-z]+)\\s+(20\\d{2})',text)
+    if not match:return None
+    first,second,year=match.groups()
+    if first not in MONTHS or second not in MONTHS:return None
+    start,end=MONTHS[first],MONTHS[second]
+    # Allow Dec-Jan with the year of the ending month, or in-year pairs.
+    if (start%12)+1!=end:return None
+    return f'{int(year):04d}-{end:02d}'
+
+
+def months_in_header(head,periodicity='monthly'):
+    found={i:period(v,periodicity) for i,v in head.items()}
     return {i:v for i,v in found.items() if v is not None}
 
 def resolve_fields(head,manual=None):
@@ -91,7 +106,7 @@ def detect_layout(head, mapping=None):
     measure_col = fields.get('Measure')
     if measure_col is None:
         return fields, confidence, [], {}, []
-    dates = {i: m for i, m in months_in_header(head).items() if i > measure_col}
+    dates = {i: m for i, m in months_in_header(head,mapping.get('periodicity','monthly')).items() if i > measure_col}
     before = [i for i in sorted(head) if i < measure_col and str(head[i]).strip()]
     selected = mapping.get('dimension_columns')
     if selected is not None:
@@ -137,7 +152,7 @@ def metric_unit(kind,label,override=None):
 def mapping_prompt(sheet,head,detected,examples=None,category_columns=None,dates=None):
     boundary = detected.get('Measure')
     candidates = [str(head[i]) for i in sorted(head)
-                  if (boundary is None and month(head[i]) is None or
+                  if (boundary is None and period(head[i]) is None or
                       boundary is not None and i < boundary)
                   and i != detected.get('Market') and str(head[i]).strip()]
     selected = [str(head[i]) for i in category_columns] if category_columns is not None else candidates
@@ -146,7 +161,7 @@ def mapping_prompt(sheet,head,detected,examples=None,category_columns=None,dates
             'dimension_candidates':candidates,'dimension_columns':selected,
             'date_columns':[str(head[i]) for i in sorted(dates or {})],
 
-            'headers':[str(v) for _,v in sorted(head.items()) if str(v).strip() and month(v) is None],
+            'headers':[str(v) for _,v in sorted(head.items()) if str(v).strip() and month(v) is None and period(v,'bimonthly') is None],
             'suggested':{field:str(head[idx]) for field,idx in detected.items()},
             'required':REQUIRED,'fields':FIELDS,
             'measure_examples':list(examples or [])[:12],
