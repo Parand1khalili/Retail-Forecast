@@ -137,8 +137,9 @@ def metric_unit(kind,label,override=None):
 def mapping_prompt(sheet,head,detected,examples=None,category_columns=None,dates=None):
     boundary = detected.get('Measure')
     candidates = [str(head[i]) for i in sorted(head)
-                  if boundary is not None and i < boundary and i != detected.get('Market')
-                  and str(head[i]).strip()]
+                  if (boundary is None and month(head[i]) is None or
+                      boundary is not None and i < boundary)
+                  and i != detected.get('Market') and str(head[i]).strip()]
     selected = [str(head[i]) for i in category_columns] if category_columns is not None else candidates
     return {'mapping_required':True,'sheet':sheet,
             'measure_column':str(head[boundary]) if boundary is not None else None,
