@@ -19,16 +19,20 @@ from schema import period, months_in_header
 from auto_engine import Features, future_request
 
 
-def make_xlsx(path, columns):
-    headers=['Market','City/Region/Dis. Channel','Brand','Measure',
+def make_xlsx(path, columns, brands=('Aqua',), missing=None):
+    metadata=['Element Caption','Element Description','Subcategory','Subcategory 2','SKUSize','SKUPackage','Company']
+    headers=['Market','City/Region/Dis. Channel','Brand']+metadata+['Measure',
              'Year-2021','MAT-2026','YTD-2026']+columns
     rows=[headers]
     for level,location,volume in [('All','All',100),('City','Tehran',20),
                                   ('Region','North',35)]:
-        for metric,amount in [('Volume Sales(Gr)',volume),
-                              ('Value Sales (1,000 Toomans)',volume*10)]:
-            rows.append([level,location,'Aqua',metric,'999','888','777']+
-                        [str(amount+j) for j in range(len(columns))])
+        for brand in brands:
+            for metric,amount in [('Volume Sales(Gr)',volume),
+                                  ('Value Sales (1,000 Toomans)',volume*10)]:
+                values=[str(amount+j) for j in range(len(columns))]
+                if missing:
+                    for j,val in missing.items():values[j]=val
+                rows.append([level,location,brand,brand,brand+' product','Plain','Fresh','100 gr','Cup','Maker',metric,'999','888','777']+values)
 
     def col(idx):
         x=''
@@ -54,6 +58,8 @@ def make_xlsx(path, columns):
           'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"/>'
           '</Relationships>')
     with zipfile.ZipFile(path,'w',compression=zipfile.ZIP_DEFLATED) as z:
+        z.writestr('[Content_Types].xml','<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>')
+        z.writestr('_rels/.rels','<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Target="xl/workbook.xml" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"/></Relationships>')
         z.writestr('xl/workbook.xml',workbook)
         z.writestr('xl/_rels/workbook.xml.rels',rels)
         z.writestr('xl/worksheets/sheet1.xml',worksheet)

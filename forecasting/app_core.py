@@ -52,6 +52,7 @@ def parse_master(path,mapping=None):
     manual_measures=mapping.get('measure_values',{})
     manual_units=mapping.get('units',{})
     sheets=[];pending_prompt=None;units={};dimension_labels={};shown_dimensions=set();preview=None
+    diagnostics=[]
     with zipfile.ZipFile(path) as z:
         shared=[]
         if 'xl/sharedStrings.xml' in z.namelist():
@@ -71,7 +72,10 @@ def parse_master(path,mapping=None):
                 try:candidate=next(rows)
                 except StopIteration:break
                 maybe=months_in_header(candidate,periodicity)
+                alternative=months_in_header(candidate,'bimonthly' if periodicity=='monthly' else 'monthly')
                 if len(maybe)>=2:head,months=candidate,maybe;break
+                if len(alternative)>=2:
+                    diagnostics.append(f'شیت {sh.attrib["name"]}: نوع دوره انتخاب‌شده با ستون‌ها سازگار نیست؛ گزینه ماهانه/دوماهه را تغییر دهید.')
             if head is None:continue
             # Resolve the Measure/Index Name boundary BEFORE checking duplicate
             # months. Date-shaped category headers before it are not time columns.
@@ -115,19 +119,25 @@ def parse_master(path,mapping=None):
                         num=float(raw)
                         if not np.isfinite(num) or num<0:raise ValueError()
                         a[j]+=num;valid[j]+=1
-                    except (TypeError,ValueError):missing[j]+=1
+                    except (TypeError,ValueError):
+                        if raw is not None and str(raw).strip() not in ('','-','–','—'):
+                            raise ValueError(f'شیت {sh.attrib["name"]}: مقدار فروش نامعتبر در دوره {months[col]}؛ سلول‌ها باید عدد غیرمنفی یا علامت داده مفقود باشند.')
+                        missing[j]+=1
             if not metric_keys[0] and not metric_keys[1]:
                 if pending_prompt is None:
                     pending_prompt=mapping_prompt(sh.attrib['name'],head,fields,sorted(seen_measures),
                                                   categories,months)
                 continue
             if metric_keys[0]!=metric_keys[1]:
-                raise SchemaError(mapping_prompt(sh.attrib['name'],head,fields,sorted(seen_measures),
-                                                 categories,months))
+                prompt=mapping_prompt(sh.attrib['name'],head,fields,sorted(seen_measures),categories,months)
+                prompt['message']=f'شیت {sh.attrib["name"]}: ردیف‌های حجم و مبلغ برای ترکیب‌های یکسان جفت نیستند؛ نام شاخص‌ها و ستون‌های دسته‌بندی را بررسی کنید.'
+                raise SchemaError(prompt)
             partial=[months[ordered[j]] for j in range(len(ordered)) if valid[j]>0 and missing[j]>0]
-            if partial:raise ValueError(f'در شیت {sh.attrib["name"]} برای ماه‌های {", ".join(partial)} سلول فروش خالی است؛ قبل از پیش‌بینی بررسی شود.')
+            if partial:raise ValueError(f'شیت {sh.attrib["name"]}: در دوره‌های {", ".join(partial)} بخشی از سلول‌های فروش خالی یا مفقود است؛ داده مفقود صفر نیست. ردیف‌های حجم و مبلغ این دوره‌ها را در فایل مبدأ تکمیل کنید.')
             keep=[j for j in range(len(ordered)) if valid[j]>0]
-            if not keep:continue
+            if not keep:
+                diagnostics.append(f'شیت {sh.attrib["name"]}: هیچ دوره فروش با مقدار عددی موجود نیست؛ داده مفقود یا نامعتبر است.')
+                continue
             for kind,label in labels.items():
                 unit=metric_unit(kind,label,manual_units.get(kind))
                 if kind in units and units[kind]!=unit:
@@ -143,6 +153,7 @@ def parse_master(path,mapping=None):
                            sh.attrib['name'],[normalized(name) for name,_ in extras]))
     if not sheets:
         if pending_prompt:raise SchemaError(pending_prompt)
+        if diagnostics:raise ValueError(' '.join(diagnostics))
         raise ValueError('هیچ شیت فروش با دوره‌های انتخاب‌شده پیدا نشد. نوع دوره (ماهانه/دوماهه)، سرتیترها و ردیف‌های حجم و مبلغ را بررسی کنید.')
     # Latest report sheet is authoritative for overlapping monthly columns.
     sheets.sort(key=lambda s:max(s[0]))
@@ -225,7 +236,7 @@ class Dataset:
         with path.open('rb') as f:
             for chunk in iter(lambda:f.read(4*1024*1024),b''):digest.update(chunk)
         signature=hashlib.sha256(json.dumps(mapping or {},sort_keys=True,ensure_ascii=False).encode('utf-8')).hexdigest()[:12]
-        out=CACHE/('v4_'+digest.hexdigest()+'_'+signature+'.npz')
+        out=CACHE/('v5_'+digest.hexdigest()+'_'+signature+'.npz')
         if out.exists():
             with np.load(out) as z:
                 schema=json.loads(str(z['schema_json'])) if 'schema_json' in z.files else None

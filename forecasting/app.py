@@ -2,9 +2,16 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, unquote
-import json, threading, uuid, time
+import json, threading, uuid, time, zipfile, os
 from app_core import Dataset, predict, ROOT
 from schema import SchemaError
+from runtime_identity import identity
+
+RUNTIME = identity()
+RUNTIME['pid'] = os.getpid()
+RUNTIME['paths'].update({'app.py': str(Path(__file__).resolve()),
+                        'app_core.py': str(__import__('app_core').__file__),
+                        'schema.py': str(__import__('schema').__file__)})
 
 HOST='127.0.0.1';PORT=8765
 HERE=Path(__file__).parent
@@ -52,7 +59,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path=urlparse(self.path).path
         if path=='/api/health':
-            self.answer({'service':'ra-forecast','ready':True});return
+            self.answer({'service':'ra-forecast','ready':True,'runtime':RUNTIME});return
         if path=='/api/data':
             with lock:dataset=state['dataset']
             self.answer(dataset.options() if dataset is not None else {
@@ -62,6 +69,7 @@ class Handler(BaseHTTPRequestHandler):
         if path in ['/','/index.html']:
             raw=(HERE/'app_ui.html').read_bytes()
             self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8')
+            self.send_header('Cache-Control','no-store')
             self.send_header('Content-Length',str(len(raw)));self.end_headers();self.wfile.write(raw)
             return
         self.send_error(404)
@@ -114,6 +122,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
         except SchemaError as e:
             self.answer(e.prompt,422)
+        except zipfile.BadZipFile:
+            self.answer({'error':'فایل Excel باز نشد؛ فایل باید یک مستر سالم با قالب xlsx باشد.'},400)
         except Exception as e:
             self.answer({'error':str(e)},400)
 

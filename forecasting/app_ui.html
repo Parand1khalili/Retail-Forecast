@@ -272,6 +272,7 @@ const defaultDimNames=['City','Company','Brand','SubBrand','Subcategory','Subcat
 const defaultDimLabels=['شهر','کمپانی','برند','زیر‌برند','ساب‌کتگوری ۱','ساب‌کتگوری ۲','ساب‌کتگوری ۳','ساب‌کتگوری ۴'];
 let dimNames=[...defaultDimNames],labels=[...defaultDimLabels];
 let data=null,pendingSource=null,selectedUpload=null,busy=false;
+let userStartedImport=false;
 let activeStage=0,maxStage=0,schemaNeedsReview=false,resultReady=false,recheckingMapping=false;
 let sourceMode='none';
 const el=id=>document.getElementById(id);
@@ -409,6 +410,8 @@ function renderSchemaPreview(schema){
   preview.append(cap);
 }
 function setData(next,initial=false){
+  // A late startup response must not overwrite an import or frequency choice.
+  if(initial&&userStartedImport)return;
   sourceMode=pendingSource==='builtin'||(initial&&String(next.source).includes('نمونه'))?'sample':'file';
   data=next;schemaNeedsReview=false;resultReady=false;maxStage=0;
   el('periodicity').value=next.periodicity||'monthly';
@@ -510,6 +513,7 @@ function lockButtons(b){
 async function operation(msg,fn,source=null){
   if(busy)return;
   try{
+    userStartedImport=true;
     lockButtons(true);status(msg,'working');pendingSource=source;
     let result=await fn();
     if(result.mapping_required){
@@ -562,6 +566,7 @@ document.addEventListener('drop',e=>{if(e.dataTransfer?.files?.length)e.preventD
 el('loadPath').onclick=()=>operation('فایل محلی در حال خواندن است…',()=>post('/api/load',{path:el('localPath').value,periodicity:el('periodicity').value}),'path');
 el('sample').onclick=()=>operation('نمونه ماهانه بارگذاری می‌شود…',()=>post('/api/load',{builtin:true}),'builtin');
 el('periodicity').onchange=()=>{
+  userStartedImport=true;
   if(data&&el('periodicity').value!==data.periodicity){
     data=null;maxStage=0;resultReady=false;
     el('source').textContent='نوع دوره تغییر کرد؛ فایل را دوباره بارگذاری کنید تا با تناوب جدید خوانده شود.';
@@ -769,6 +774,7 @@ el('newSource').onclick=()=>advanceTo(0);
 el('horizon').onchange=()=>{invalidateResult();updateRunSummary()};
 makeFilters();showStage(0,true);
 fetch('/api/data').then(x=>{if(!x.ok)throw Error('ارتباط با سرور برقرار نشد.');return x.json()}).then(x=>{
+  if(userStartedImport)return;
   if(x.ready===false){el('source').textContent=x.message;el('sample').hidden=true;status('داده نمونه در این رایانه موجود نیست. برای شروع یک فایل Excel را رها یا انتخاب کنید.');}
   else setData(x,true);
 }).catch(e=>status(e.message,true));

@@ -1,23 +1,46 @@
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$bundledPython = 'C:\Users\asus\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe'
-$pythonExe = if (Test-Path -LiteralPath $bundledPython) { $bundledPython } else { (Get-Command python -ErrorAction Stop).Source }
-$ready = $false
-try {
-    $reply = Invoke-RestMethod 'http://127.0.0.1:8765/api/health' -TimeoutSec 2
-    $ready = ($reply.service -eq 'ra-forecast' -and $reply.ready)
-} catch { }
-if (-not $ready) {
+$pythonCandidates = @(
+    (Join-Path $projectRoot '.venv\Scripts\python.exe'),
+    (Join-Path $projectRoot 'venv\Scripts\python.exe'),
+    (Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe')
+)
+$pythonExe = $pythonCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if (-not $pythonExe) { $pythonExe = (Get-Command python -ErrorAction Stop).Source }
+$expected = (& $pythonExe -B (Join-Path $projectRoot 'forecasting\runtime_identity.py')) | ConvertFrom-Json
+function Read-Health {
+    try { Invoke-RestMethod 'http://127.0.0.1:8765/api/health' -TimeoutSec 2 } catch { $null }
+}
+function Is-Current($reply) {
+    $reply -and $reply.service -eq 'ra-forecast' -and $reply.ready -and
+    $reply.runtime.root -eq $expected.root -and $reply.runtime.source_id -eq $expected.source_id -and
+    $reply.runtime.python -eq $expected.python
+}
+$reply = Read-Health
+if ($reply -and -not (Is-Current $reply)) {
+    if ($reply.runtime.root -ne $expected.root) {
+        throw 'Port 8765 belongs to an unverified or legacy server. Verify its Python process/project path and stop it before launching this project. It will not be reused or terminated automatically.'
+    }
+    $listeners = Get-NetTCPConnection -LocalPort 8765 -State Listen
+    foreach ($ownerId in ($listeners.OwningProcess | Select-Object -Unique)) {
+        $owner = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $ownerId)
+        $appPath = Join-Path $projectRoot 'forecasting\app.py'
+        if ($ownerId -ne $reply.runtime.pid -or -not $owner.CommandLine.Contains($appPath)) {
+            throw 'Server owner does not match the verified app path; stop it manually after checking.'
+        }
+        Stop-Process -Id $ownerId
+    }
+    $reply = $null
+}
+if (-not (Is-Current $reply)) {
     $scriptPath = Join-Path $projectRoot 'forecasting\app.py'
-    Start-Process -FilePath $pythonExe -ArgumentList ('"' + $scriptPath + '"') -WorkingDirectory $projectRoot -WindowStyle Hidden
-    for ($attempt=0; $attempt -lt 30; $attempt++) {
+    Start-Process -FilePath $pythonExe -ArgumentList ('-B "' + $scriptPath + '"') -WorkingDirectory $projectRoot -WindowStyle Hidden
+    for ($attempt=0; $attempt -lt 40; $attempt++) {
         Start-Sleep -Milliseconds 500
-        try {
-            $reply = Invoke-RestMethod 'http://127.0.0.1:8765/api/health' -TimeoutSec 2
-            if ($reply.service -eq 'ra-forecast' -and $reply.ready) { $ready=$true; break }
-        } catch { }
+        $reply = Read-Health
+        if (Is-Current $reply) { break }
     }
 }
-if (-not $ready) { throw 'The forecast app did not start on port 8765.' }
+if (-not (Is-Current $reply)) { throw 'The current forecast app did not start on port 8765. Check the port owner and Python environment.' }
 try { Start-Process 'http://127.0.0.1:8765' }
 catch { Write-Output 'Open this address in your browser: http://127.0.0.1:8765' }
