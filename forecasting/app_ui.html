@@ -124,13 +124,133 @@ input:focus,select:focus{outline:2px solid #b5dce8;outline-offset:1px}
 .evidence-table td:last-child,.evidence-table th:last-child{text-align:left;white-space:nowrap;direction:ltr}
 .evidence-reason{font-size:12px;border-right:3px solid #10978e;padding:7px 12px;background:#f1f9f8;border-radius:0 8px 8px 0;margin:13px 0}
 @media(max-width:1080px){.evidence-grid{grid-template-columns:1fr}}
+
+/* EMRC warm palette · five-stage workflow. Local Persian font fallbacks; no CDN. */
+:root{--peach:#f8b195;--coral:#f67280;--rose:#c06c84;--plum:#6c5b7b;--slate:#355c7d;--ink:#343249;--muted:#746b7a;--line:#e9dfe7;--bg:#faf7f8;--card:#fff;--blue:#6c5b7b;--teal:#c06c84;--soft:#fcf0f1;--red:#b23e50}
+body{font:14px/1.9 "Vazirmatn","IRANSansX","Segoe UI",Tahoma,sans-serif;background:linear-gradient(150deg,#fff9f5 0%,#fbf7f9 48%,#f5f6fa 100%);color:var(--ink);min-height:100vh}
+button,input,select,summary{font:inherit}
+.wrap{max-width:1170px;padding:23px 24px 45px}
+.mast{background:linear-gradient(111deg,#355c7d 0%,#6c5b7b 51%,#c06c84 100%);border-radius:22px;padding:25px 34px;box-shadow:0 13px 32px #6c5b7b25}
+.mast:after{opacity:.6}
+.mast h1{font-size:26px;font-weight:750;letter-spacing:0;margin:5px 0}
+.mast p{font-size:13px;max-width:740px;line-height:1.9}
+.mast .eyebrow{font-family:"Segoe UI",sans-serif;letter-spacing:.16em;font-size:11px}
+.header-side{border-color:#ffffff3c;min-width:160px}
+.wizard-layout{max-width:1020px;margin:20px auto 0}
+.wizard-progress{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:0 0 14px;direction:rtl}
+.progress-step{display:flex;align-items:center;gap:8px;text-align:right;padding:12px 10px;border:1px solid var(--line);background:#ffffffbd;border-radius:12px;color:#7d7484;min-width:0;font-size:11px;cursor:pointer;box-shadow:none;transition:background .15s,border-color .15s}
+.progress-step:disabled{opacity:.65;cursor:default}
+.progress-step.current{background:#fff1ed;border-color:#efac9c;color:#634e64;box-shadow:0 4px 12px #d88f9e13}
+.progress-step.completed{background:#f7eff6;border-color:#decddb;color:#6c5b7b}
+.progress-number{flex:none;width:27px;height:27px;display:inline-grid;place-items:center;border-radius:9px;background:#eee9f0;color:#6c5b7b;font:700 13px "Segoe UI",sans-serif}
+.progress-step.current .progress-number{background:var(--rose);color:white}
+.progress-step.completed .progress-number{background:var(--plum);color:white}
+.progress-label{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.stage-card{max-width:890px;margin:0 auto;padding:26px 31px 28px;border-radius:19px;box-shadow:0 11px 32px #6c5b7b12;border:1px solid #eee3e9;background:#fff}
+.wizard-stage[hidden],#main[hidden]{display:none!important}
+.wizard-stage{animation:stage-in .2s ease-out}
+@keyframes stage-in{from{opacity:.35;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+.stage-heading{display:flex;align-items:center;gap:10px;margin:0 0 5px}
+.stage-heading h2{margin:0;font-size:21px;color:#463a56;line-height:1.5}
+.stage-num{display:inline-grid;place-items:center;flex:none;width:36px;height:36px;background:#fde9e7;border-radius:11px;color:#a95577;font:700 15px "Segoe UI",sans-serif}
+.stage-lead{font-size:13px;color:#736a7b;line-height:2;margin:0 0 20px}
+.stage-actions{display:flex;align-items:center;justify-content:flex-start;gap:10px;flex-wrap:wrap;border-top:1px solid #f0e8ed;padding-top:19px;margin-top:19px}
+.stage-actions .btn{min-width:145px}
+.stage-actions .secondary{min-width:95px}
+.stage-actions .caption{font-size:11px;color:var(--muted)}
+.card h2,.card h3,.chartbox h3,.recipe h3,.evidence h3{color:#51405f}
+.card{box-shadow:0 11px 32px #6c5b7b12;border-color:var(--line)}
+.btn{background:var(--plum);color:white;border:1px solid var(--plum);box-shadow:none;font-weight:650;border-radius:10px;padding:10px 17px}
+.btn:hover:not(:disabled){background:#584969;border-color:#584969;transform:translateY(-1px);filter:none}
+.btn.secondary{background:white;border:1px solid #dcd0da;color:#594b6b}
+.btn.secondary:hover:not(:disabled){background:#faf2f7;border-color:var(--rose)}
+.btn:disabled{cursor:not-allowed;opacity:.48}
+input[type=text],select{background:#fffcfd;border-color:#e2d7e0;border-radius:10px;color:#423b50}
+input:focus,select:focus{outline:2px solid #f1c1cb;border-color:#c06c84;box-shadow:0 0 0 3px #f8b19532}
+.field label{color:#615369}
+.help,.source{color:var(--muted)}
+.source-indicator{border-color:#ebd8e5;color:#615369;background:#faf3f8}
+.dropzone{max-width:680px;margin:12px auto;border:1.5px dashed #d6a5b3;background:#fffafa;border-radius:17px;min-height:185px}
+.dropzone:hover,.dropzone:focus-visible,.dropzone.drag-active{background:#fff1ee;border-color:var(--coral)}
+.dropzone.drag-active{box-shadow:inset 0 0 0 2px #f672803d}
+.drop-icon{background:#ffe6df;color:#b86174;width:52px;height:52px;font-size:26px}
+.dropzone strong{font-size:15px;color:#5a4869}
+.dropzone .pick-link{color:#a55177}
+.selected-file{background:#f5edf7;border-color:#e4cfe2;color:#66516e}
+.optional-path summary{color:#7d5c76}
+.schema-preview{background:#fcf6fa;border-color:#eddde7;color:#59465f}
+.schema-preview .schema-title{color:#825475}
+.schema-preview .schema-caption{color:#766577}
+.schema-preview .schema-tags span{border-color:#e7dce6;background:#fff;color:#665069}
+.map-dims{background:#fffafb;border-color:#eee2e8}
+.map-dims .map-dims-title,.map-fields-header{color:#655070}
+.map-dim input{accent-color:var(--rose)}
+.status{display:flex;gap:10px;align-items:flex-start;margin:0 0 14px;padding:10px 15px;min-height:0;border-radius:12px;border:1px solid #e6dce5;background:#f7f3f7;color:#604f67;font-size:12px;line-height:1.9}
+.status:before{content:"i";display:grid;place-items:center;flex:none;font:700 12px "Segoe UI",sans-serif;background:#e1d5e2;color:#5c4e68;width:21px;height:21px;border-radius:50%;margin-top:1px}
+.status.working{border-color:#f1d6c8;background:#fff8f3;color:#8b5863}
+.status.working:before{content:"…";background:#f8b195;color:#713f5e}
+.status.success{border-color:#e0d7e6;background:#f6f1f8;color:#675171}
+.status.success:before{content:"✓";background:#6c5b7b;color:white}
+.status.error{background:#fff1f1;border-color:#f5b9c1;color:#a63e52}
+.status.error:before{content:"!";background:#f67280;color:white}
+.kpi,.detail{border-color:#eadfe8;background:#fcfafc}
+.kpi.primary{background:linear-gradient(130deg,#fff1ec,#f7edf4);border-color:#f0d9db}
+.kpi .label{color:#756879}
+.kpi strong,.kpi.primary strong{color:#604b70}
+.kpi.primary strong{color:#a35073}
+.chartbox,.recipe,.evidence{background:#fffdfe;border-color:#eadfe7}
+.recipe .recipe-weight{color:#a65378}
+.evidence{background:linear-gradient(180deg,#fffefd,#fbf8fb)}
+.evidence-badge{background:#f9e9ee;color:#985376}
+.evidence-row.selected,.evidence-table tr.selected{background:#fff0ed;border-color:#f1c5c5}
+.evidence-row.selected .evidence-fill{background:var(--coral)}
+.evidence-fill{background:#8d82a1}
+.evidence-method small,.evidence-origin-head em{color:#a75479}
+.evidence-reason{border-right-color:var(--rose);background:#fcf3f7}
+.evidence-box{border-color:#eee5eb}
+.evidence-track{background:#f0e8ee}
+.evidence-table th{background:#f8f1f6;color:#685570}
+.evidence-all{border-color:#e9dfe7}
+.evidence-all summary{color:#7c5275}
+.badge{background:#fce6e7;color:#a74d6d}
+.note{background:#fff7f2;border-color:#f2d9d1;color:#865766}
+.empty{min-height:340px;padding:55px 20px}
+.empty-visual{background:#fae8ec;color:#a85478}
+.foot{text-align:center;font-size:11px;max-width:1020px;margin:17px auto;color:#817786}
+#main.stage-card{max-width:1020px}
+.result-actions{display:flex;gap:9px;flex-wrap:wrap;justify-content:flex-start;margin-bottom:17px}
+.result-actions .btn{min-width:120px}
+#filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 16px}
+#mappingPanel{border-top:1px solid #eddee6;padding-top:18px;margin-top:18px}
+#mappingPanel .field{max-width:520px}
+@media(max-width:880px){.wrap{padding:13px 13px 30px}.wizard-progress{gap:4px}.progress-step{padding:9px 5px;justify-content:center}.progress-label{display:none}.stage-card{padding:23px 18px}.mast{padding:23px}.header-side{display:none}}
+@media(max-width:580px){.mast h1{font-size:23px}#filters{grid-template-columns:1fr}.stage-actions{flex-direction:column}.stage-actions .btn{width:100%}.stage-heading h2{font-size:19px}.wizard-progress{gap:3px}.progress-number{width:29px;height:29px}.progress-step{border-radius:9px}}
 </style></head><body><div class="wrap">
 <header class="mast"><div class="header-content"><div><div class="eyebrow">EMRC / RETAIL AUDIT / FORECASTING</div><h1>پیش‌بینی فروش محصولات</h1><p>فایل مستر را وارد کنید، بازار و ماه مقصد را انتخاب کنید و نتیجه را همراه با روش منتخب و خطای اعتبارسنجی تاریخی ببینید.</p></div><div class="header-side"><strong>Forecast Studio</strong><span>1–3 MONTH HORIZON</span></div></div></header>
-<div class="grid"><aside class="card" aria-label="تنظیمات پیش‌بینی">
-<section class="section"><h2><span class="step">01</span> دادهٔ ورودی</h2><div class="source source-indicator" id="source" aria-live="polite">در حال بررسی دادهٔ موجود…</div><div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="انتخاب یا رها کردن فایل مستر اکسل"><span class="drop-icon" aria-hidden="true">⇧</span><strong>فایل Excel را اینجا رها کنید</strong><span>یا <span class="pick-link">برای انتخاب فایل کلیک کنید</span></span><span>فقط .xlsx · حداکثر ۲۲۰ مگابایت</span></div><input class="file-input" type="file" id="file" accept=".xlsx"><div id="selectedFile" class="selected-file" hidden></div><button id="upload" class="btn full" disabled>خواندن فایل انتخاب‌شده</button><details class="optional-path"><summary>راه دیگر: خواندن از مسیر فایل در رایانه</summary><div class="field"><label for="localPath">مسیر کامل فایل .xlsx روی رایانه اجراکننده برنامه</label><div class="fileline"><input type="text" id="localPath" placeholder="H:\folder\master.xlsx"><button class="btn secondary" id="loadPath">خواندن</button></div></div></details><p class="help">نام ستون‌ها خودکار تشخیص داده می‌شود؛ اگر ساختار متفاوت باشد، می‌توانید نگاشت ستون‌ها را تأیید کنید.</p><div id="schemaPreview" class="schema-preview" hidden></div><button class="btn secondary full" id="editMapping" hidden type="button">اصلاح دستی ستون‌ها</button><div id="mappingPanel" hidden></div><button id="sample" class="btn secondary full">بازگشت به نمونهٔ ماست</button></section>
-<section class="section"><h2><span class="step">02</span> انتخاب بازار و شاخص</h2><div class="field"><label for="metric">شاخص</label><select id="metric"><option value="volume_kg">فروش حجمی، کیلوگرم</option><option value="value_1000_toman">فروش ریالی، هزار تومان</option></select></div><div id="filters"></div><p class="help">«همه» یعنی جمع همان سطح؛ مثلاً شهر تهران و همهٔ برندها. گزینه‌ها از ترکیب‌های موجود در فایل ساخته می‌شوند.</p></section>
-<section class="section"><h2><span class="step">03</span> تعیین ماه هدف</h2><p class="help" id="latestMonth"></p><div class="field"><label for="horizon">ماه مقصدِ بدون داده</label><select id="horizon"></select></div><div hidden><select id="cutoff"></select><select id="window"></select><select id="method"><option value="auto">خودکار</option></select></div><p class="help">سامانه روش و طول تاریخچه را با آزمون ماه‌های گذشته انتخاب می‌کند و سپس با دادهٔ موجود آموزش می‌بیند. آموزش اولیه ممکن است چند دقیقه طول بکشد؛ نتیجهٔ آموزش ذخیره می‌شود.</p><button class="btn full" id="run">آموزش خودکار و پیش‌بینی</button><div class="status" id="status"></div></section>
-</aside><main class="card" id="main" aria-live="polite"><div class="empty"><div class="empty-visual">▤</div><strong>آمادهٔ ساخت پیش‌بینی</strong><p>فایل مستر، بازار و ماه هدف را انتخاب کنید؛ سپس پیش‌بینی و مدل منتخب اینجا نمایش داده می‌شود.</p></div></main></div>
+<div class="wizard-layout">
+<nav class="wizard-progress" aria-label="مراحل پیش‌بینی">
+<button class="progress-step current" data-step="0" type="button" aria-current="step"><span class="progress-number">01</span><span class="progress-label">ورود فایل</span></button>
+<button class="progress-step" data-step="1" type="button" disabled><span class="progress-number">02</span><span class="progress-label">بررسی ستون‌ها</span></button>
+<button class="progress-step" data-step="2" type="button" disabled><span class="progress-number">03</span><span class="progress-label">انتخاب بازار</span></button>
+<button class="progress-step" data-step="3" type="button" disabled><span class="progress-number">04</span><span class="progress-label">پیش‌بینی</span></button>
+<button class="progress-step" data-step="4" type="button" disabled><span class="progress-number">05</span><span class="progress-label">نتایج</span></button>
+</nav>
+<div class="status" id="status" role="status" aria-live="polite">فایل مستر را وارد کنید یا از نمونه موجود استفاده کنید.</div>
+<aside class="stage-card" aria-label="مراحل پیش‌بینی">
+<section class="wizard-stage" data-panel="0"><div class="stage-heading"><span class="stage-num">01</span><h2>ورود اطلاعات فروش</h2></div><p class="stage-lead">فایل مستر Excel را انتخاب کنید؛ ساختار ستون‌ها در مرحله بعد بررسی می‌شود.</p><div class="source source-indicator" id="source" aria-live="polite">در حال بررسی دادهٔ موجود…</div><div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="انتخاب یا رها کردن فایل مستر اکسل"><span class="drop-icon" aria-hidden="true">⇧</span><strong>فایل Excel را اینجا رها کنید</strong><span>یا <span class="pick-link">برای انتخاب فایل کلیک کنید</span></span><span>فقط .xlsx · حداکثر ۲۲۰ مگابایت</span></div><input class="file-input" type="file" id="file" accept=".xlsx"><div id="selectedFile" class="selected-file" hidden></div><button id="upload" class="btn full" disabled>خواندن فایل انتخاب‌شده</button><details class="optional-path"><summary>راه دیگر: خواندن از مسیر فایل در رایانه</summary><div class="field"><label for="localPath">مسیر کامل فایل .xlsx روی رایانه اجراکننده برنامه</label><div class="fileline"><input type="text" id="localPath" placeholder="H:\folder\master.xlsx"><button class="btn secondary" id="loadPath">خواندن</button></div></div></details><p class="help">نام ستون‌ها خودکار تشخیص داده می‌شود؛ اگر ساختار متفاوت باشد، می‌توانید نگاشت ستون‌ها را تأیید کنید.</p><button id="sample" class="btn secondary full">استفاده از داده نمونه ماست</button>
+<div class="stage-actions"><button id="nextFile" class="btn" type="button" disabled>ادامه: بررسی ستون‌ها</button><span class="caption">ابتدا باید یک فایل با موفقیت خوانده شود.</span></div></section>
+<section class="wizard-stage" data-panel="1" hidden><div class="stage-heading"><span class="stage-num">02</span><h2>تأیید ساختار داده</h2></div>
+<p class="stage-lead">ستون‌های دسته‌بندی و دوره‌های ماهانه را بررسی کنید؛ اگر تشخیص درست نبود، آن را دستی اصلاح کنید.</p>
+<div class="source source-indicator" id="schemaSource"></div>
+<div id="schemaPreview" class="schema-preview" hidden></div>
+<button class="btn secondary" id="editMapping" hidden type="button">اصلاح دستی ستون‌ها</button>
+<div id="mappingPanel" hidden></div>
+<div class="stage-actions"><button id="nextSchema" class="btn" type="button" disabled>تأیید و ادامه</button><button id="backSchema" class="btn secondary" type="button">بازگشت به فایل</button></div>
+</section>
+<section class="wizard-stage" data-panel="2" hidden><div class="stage-heading"><span class="stage-num">03</span><h2>انتخاب بازار و شاخص</h2></div><p class="stage-lead">شهر، برند و سطح دسته‌بندی موردنظر را مشخص کنید. «همه» یعنی مجموع همان سطح.</p><div class="field"><label for="metric">شاخص</label><select id="metric"><option value="volume_kg">فروش حجمی، کیلوگرم</option><option value="value_1000_toman">فروش ریالی، هزار تومان</option></select></div><div id="filters"></div><p class="help">فیلترها بر اساس ترکیب‌های موجود در فایل ساخته می‌شوند و مقدار پیش‌بینی را تعیین می‌کنند. معیار انتخاب مدل روی کل فایل محاسبه می‌شود.</p>
+<div class="stage-actions"><button id="nextFilters" class="btn" type="button">ادامه: انتخاب ماه</button><button id="backFilters" class="btn secondary" type="button">بازگشت به ستون‌ها</button></div></section>
+<section class="wizard-stage" data-panel="3" hidden><div class="stage-heading"><span class="stage-num">04</span><h2>تنظیم و اجرای پیش‌بینی</h2></div><p class="stage-lead">ماه موردنظر را انتخاب کنید؛ موتور به‌طور خودکار روش‌ها را ارزیابی می‌کند و مدل نهایی را می‌سازد.</p><p class="help" id="latestMonth"></p><div class="field"><label for="horizon">ماه مقصدِ بدون داده</label><select id="horizon"></select></div><div hidden><select id="cutoff"></select><select id="window"></select><select id="method"><option value="auto">خودکار</option></select></div><p class="help">سامانه روش و طول تاریخچه را با آزمون ماه‌های گذشته انتخاب می‌کند و سپس با دادهٔ موجود آموزش می‌بیند. آموزش اولیه ممکن است چند دقیقه طول بکشد؛ نتیجهٔ آموزش ذخیره می‌شود.</p><div class="stage-actions"><button class="btn" id="run">محاسبه پیش‌بینی</button><button class="btn secondary" id="backTarget" type="button">بازگشت به فیلترها</button></div></section>
+</aside><main class="stage-card" id="main" data-panel="4" aria-live="polite" hidden><div class="result-actions"><button class="btn secondary" id="editSelection" type="button">تغییر فیلترها</button><button class="btn secondary" id="editTarget" type="button">تغییر ماه هدف</button><button class="btn secondary" id="newSource" type="button">فایل جدید</button></div><div id="results"><div class="empty"><div class="empty-visual">▤</div><strong>آمادهٔ ساخت پیش‌بینی</strong><p>فایل مستر، بازار و ماه هدف را انتخاب کنید؛ سپس پیش‌بینی و مدل منتخب اینجا نمایش داده می‌شود.</p></div></main></div>
 <div class="foot">واحد هر شاخص از فایل خوانده می‌شود؛ در نمونهٔ ماست مبلغ بر حسب «هزار تومان» است. صفر در داده، مشاهده‌نشدن در بازار بررسی‌شده است. نتیجه به برآورد منتشرشدهٔ RA مربوط می‌شود و فاصلهٔ انتشار گزارش تا زمان واقعی را باید هنگام استفاده در نظر گرفت.</div>
 </div><script>
 const defaultDimNames=['City','Company','Brand','SubBrand','Subcategory','Subcategory2','Subcategory3','Subcategory4'];
