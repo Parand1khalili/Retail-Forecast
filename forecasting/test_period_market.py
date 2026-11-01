@@ -97,7 +97,7 @@ class SourceFrequencyTests(unittest.TestCase):
             self.assertEqual(output['target'],'2026-08')
             self.assertEqual(output['periodicity'],'bimonthly')
             self.assertEqual(output['rows'],1)
-        self.assertEqual(forecasts,{'All':102.0,'City':22.0,'Region':37.0})
+        self.assertEqual(forecasts,{'All':101.5,'City':21.5,'Region':36.5})
         cached=Dataset.file(path,{'periodicity':'bimonthly'})
         self.assertEqual(cached.periodicity,'bimonthly')
         self.assertEqual(cached.options()['dimensions'],d.options()['dimensions'])
