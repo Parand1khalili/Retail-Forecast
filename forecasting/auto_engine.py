@@ -18,9 +18,9 @@ OUT.mkdir(parents=True,exist_ok=True)
 PARAMS=dict(iterations=180,depth=5,learning_rate=.06,l2_leaf_reg=10,
             loss_function='RMSE',random_seed=42,thread_count=4,verbose=False,
             allow_writing_files=False,has_time=True,one_hot_max_size=32)
-VERSION='global-v1'
+VERSION='global-v2-dynamic-dimensions'
 SELECTION_VERSION='robust-price-volume-v3'
-POLICY_VERSION='shared-origin-city-segment-v1'
+POLICY_VERSION='shared-origin-city-segment-v2-dynamic-dimensions'
 
 def emit(*args):print(*args,flush=True)
 
@@ -69,7 +69,7 @@ class Features(FeatureBuilder):
         self.money=d.value[:,start:end+1]
         y=self.volume if metric=='volume_kg' else self.money
         dates=pd.PeriodIndex(d.months[start:end+1],freq='M')
-        super().__init__(pd.DataFrame(d.meta,columns=DIMS),y,self.money,dates)
+        super().__init__(pd.DataFrame(d.meta,columns=d.all_dimensions()),y,self.money,dates)
         self.price=np.divide(self.money,self.volume,out=np.full_like(self.money,np.nan),where=self.volume>0)
     def features(self,t,h):
         x,scale,ever=super().features(t,h)
@@ -87,7 +87,7 @@ def fit_models(d,metric,cutoff,window,predict_only=None):
     start=max(0,cutoff-window+1) if isinstance(window,int) else 0
     if cutoff-start+1<18:return {}
     fingerprint=hashlib.sha256(VERSION.encode()+json.dumps(PARAMS,sort_keys=True).encode()+
-        str((metric,start,cutoff)).encode()+d.meta.tobytes()+d.volume[:,start:cutoff+1].tobytes()+d.value[:,start:cutoff+1].tobytes()).hexdigest()[:20]
+        str((metric,start,cutoff)).encode()+json.dumps(d.all_dimensions()).encode()+d.meta.tobytes()+d.volume[:,start:cutoff+1].tobytes()+d.value[:,start:cutoff+1].tobytes()).hexdigest()[:20]
     folder=OUT/'cache'/fingerprint;folder.mkdir(parents=True,exist_ok=True)
     cached=folder/'predictions.npz'
     if cached.exists():
@@ -118,7 +118,7 @@ def fit_models(d,metric,cutoff,window,predict_only=None):
         options=dict(PARAMS)
         if np.ptp(response[valid])==0:options['allow_const_label']=True
         model=CatBoostRegressor(**options)
-        model.fit(X.loc[valid],response[valid],cat_features=DIMS,sample_weight=weights[valid] if weights is not None else None)
+        model.fit(X.loc[valid],response[valid],cat_features=d.all_dimensions(),sample_weight=weights[valid] if weights is not None else None)
         model.save_model(str(folder/(mode+'.cbm')))
         arr=[]
         for h,(xp,ps,ever) in enumerate(predframes,1):
@@ -186,7 +186,7 @@ def candidates(d,metric,cutoff):
     return out
 
 def group(y,meta,level):
-    cols={'city_segment':list(range(8)),'city_subbrand':[0,1,2,3],'national_segment':list(range(1,8)),'total':[]}[level]
+    cols={'city_segment':list(range(meta.shape[1])),'city_subbrand':[0,1,2,3],'national_segment':list(range(1,8)),'total':[]}[level]
     if not cols:return y.sum(0,keepdims=True)
     labels=pd.DataFrame(meta[:,cols]);ids=labels.groupby(list(labels.columns),sort=False).ngroup().to_numpy()
     out=np.zeros((ids.max()+1,y.shape[1]));np.add.at(out,ids,y);return out
@@ -276,7 +276,7 @@ def forecast_component(d,metric,cutoff,name):
 
 def dataset_policy(d,metric,cutoff):
     """Re-select on completed targets of the supplied dataset, never future dates."""
-    digest=hashlib.sha256(VERSION.encode()+POLICY_VERSION.encode()+metric.encode()+d.meta.tobytes()+d.volume[:,:cutoff+1].tobytes()+d.value[:,:cutoff+1].tobytes()).hexdigest()[:24]
+    digest=hashlib.sha256(VERSION.encode()+POLICY_VERSION.encode()+metric.encode()+json.dumps(d.all_dimensions()).encode()+d.meta.tobytes()+d.volume[:,:cutoff+1].tobytes()+d.value[:,:cutoff+1].tobytes()).hexdigest()[:24]
     cached=OUT/'runtime_policies'/f'{digest}.json';cached.parent.mkdir(exist_ok=True)
     if cached.exists():return json.loads(cached.read_text(encoding='utf-8'))
     # All 3 targets for each origin must be known at the selection cutoff.
