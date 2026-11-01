@@ -360,16 +360,30 @@ function refreshTarget(){let old=el('horizon').value,base=el('cutoff').value;cho
 function renderSchemaPreview(schema){
   const preview=el('schemaPreview'),edit=el('editMapping');
   preview.replaceChildren();
-  if(!schema||!Array.isArray(schema.dimension_columns)){preview.hidden=true;edit.hidden=true;return}
-  preview.hidden=false;edit.hidden=false;
-  const title=document.createElement('div');title.className='schema-title';title.textContent='ستون‌های شناسایی‌شده به‌صورت خودکار';preview.append(title);
+  const hasExcelSchema=Boolean(schema&&Array.isArray(schema.dimension_columns));
+  const hasSourceFile=(pendingSource==='upload'&&selectedUpload)||
+    (pendingSource==='path'&&el('localPath').value.trim());
+  preview.hidden=false;
+  edit.hidden=!hasExcelSchema||!hasSourceFile;
+  const title=document.createElement('div');title.className='schema-title';
+  title.textContent=hasExcelSchema?'ستون‌های شناسایی‌شده از فایل Excel':'ابعاد موجود در داده نمونه';
+  preview.append(title);
   const tagbox=document.createElement('div');tagbox.className='schema-tags';
-  for(const name of schema.dimension_columns){const tag=document.createElement('span');tag.textContent=name;tagbox.append(tag)}
+  const names=hasExcelSchema?schema.dimension_columns:(data?.dimensions||defaultDimNames);
+  for(const name of names){const tag=document.createElement('span');tag.textContent=name;tag.dir='auto';tagbox.append(tag)}
   preview.append(tagbox);
   const cap=document.createElement('div');cap.className='schema-caption';
-  const dates=schema.date_columns||[];
-  const range=dates.length?(dates[0]+' تا '+dates[dates.length-1]):'شناسایی نشده';
-  cap.textContent='مرز داده: '+(schema.measure_column||'نامشخص')+' · '+dates.length+' ستون ماهانه ('+range+'). برای تغییر دسته‌ها، «اصلاح دستی ستون‌ها» را بزنید.';
+  if(hasExcelSchema){
+    const dates=schema.date_columns||[];
+    const range=dates.length?(dates[0]+' تا '+dates[dates.length-1]):'شناسایی نشده';
+    cap.textContent='ستون شاخص: '+(schema.measure_column||'نامشخص')+
+      ' · '+dates.length+' ستون تاریخ ماهانه ('+range+').'+
+      (hasSourceFile?' اگر نگاشت درست نیست، «اصلاح دستی ستون‌ها» را بزنید.':
+      ' برای اصلاح نگاشت، فایل Excel را دوباره از مرحله اول وارد کنید.');
+  }else{
+    cap.textContent='این نمونه از Dataset آماده خوانده شده و سرتیترهای اصلی Excel در آن موجود نیست. '+
+      'ابعاد بالا در محاسبات استفاده می‌شوند. برای دیدن و اصلاح سرتیترهای واقعی، فایل Excel را وارد کنید.';
+  }
   preview.append(cap);
 }
 function setData(next,initial=false){
@@ -377,13 +391,13 @@ function setData(next,initial=false){
   data=next;schemaNeedsReview=false;resultReady=false;maxStage=0;
   dimNames=Array.isArray(next.dimensions)&&next.dimensions.length?next.dimensions:[...defaultDimNames];
   labels=dimNames.map(name=>defaultDimNames.includes(name)?defaultDimLabels[defaultDimNames.indexOf(name)]:name);
-  makeFilters();renderSchemaPreview(next.schema);el('mappingPanel').hidden=true;
+  makeFilters();el('mappingPanel').hidden=true;
   const description=next.source+' · '+next.months[0]+' تا '+next.months.at(-1)+' · '+persian(next.series_count)+' ردیف شهری';
   el('source').textContent=description;
   el('schemaSource').textContent=description;
   el('sourceKind').hidden=false;
   el('sourceKind').textContent=sourceMode==='sample'?'داده نمونه · ماست':'فایل کاربر · Excel';
-  el('sourceKind').className='badge'+(sourceMode==='sample'?' sample-tag':'');el('metric').options[0].textContent='فروش حجمی، '+next.units.volume_kg;el('metric').options[1].textContent='فروش ریالی، '+next.units.value_1000_toman;refreshFilters();refreshMonths();updateRunSummary();el('results').innerHTML='';
+  el('sourceKind').className='badge'+(sourceMode==='sample'?' sample-tag':'');renderSchemaPreview(next.schema);el('metric').options[0].textContent='فروش حجمی، '+next.units.volume_kg;el('metric').options[1].textContent='فروش ریالی، '+next.units.value_1000_toman;refreshFilters();refreshMonths();updateRunSummary();el('results').innerHTML='';
   const afterCorrection=Boolean(recheckingMapping);recheckingMapping=false;
   showStage(afterCorrection?1:0,true);
   status(afterCorrection?'نگاشت جدید اعمال شد. ستون‌ها را بررسی و «تأیید و ادامه» را بزنید.':
@@ -475,8 +489,12 @@ async function operation(msg,fn,source=null){
   try{
     lockButtons(true);status(msg,'working');pendingSource=source;
     let result=await fn();
-    if(result.mapping_required)showMapping(result,true);
-    else setData(result);
+    if(result.mapping_required){
+      // A rejected/new upload must not leave the previous workbook approved.
+      data=null;resultReady=false;maxStage=1;
+      el('nextFile').disabled=true;
+      showMapping(result,true);
+    }else setData(result);
   }catch(e){
     recheckingMapping=false;
     status('خواندن فایل انجام نشد: '+e.message+(data?' فایل قبلی همچنان فعال است.':''),true);
