@@ -18,9 +18,9 @@ OUT.mkdir(parents=True,exist_ok=True)
 PARAMS=dict(iterations=180,depth=5,learning_rate=.06,l2_leaf_reg=10,
             loss_function='RMSE',random_seed=42,thread_count=4,verbose=False,
             allow_writing_files=False,has_time=True,one_hot_max_size=32)
-VERSION='global-v2-dynamic-dimensions'
+VERSION='global-v3-frequencies-and-market-levels'
 SELECTION_VERSION='robust-price-volume-v3'
-POLICY_VERSION='shared-origin-city-segment-v3-selection-evidence'
+POLICY_VERSION='shared-origin-geographic-level-v4-frequency'
 
 def emit(*args):print(*args,flush=True)
 
@@ -36,7 +36,7 @@ def price_shift_guard(d,cutoff):
     preceding monthly price changes, rather than compounding the latest jump.
     This is a price/mix proxy, not an external inflation observation.
     """
-    if cutoff<12:return {'active':False}
+    if cutoff<max(6,12//d.period_months):return {'active':False}
     volume=d.volume[:,:cutoff+1].sum(0);value=d.value[:,:cutoff+1].sum(0)
     p=np.divide(value,volume,out=np.full_like(value,np.nan),where=volume>0)
     changes=np.divide(p[1:],p[:-1],out=np.full(len(p)-1,np.nan),where=p[:-1]>0)-1
@@ -69,7 +69,8 @@ class Features(FeatureBuilder):
         self.money=d.value[:,start:end+1]
         y=self.volume if metric=='volume_kg' else self.money
         dates=pd.PeriodIndex(d.months[start:end+1],freq='M')
-        super().__init__(pd.DataFrame(d.meta,columns=d.all_dimensions()),y,self.money,dates)
+        super().__init__(pd.DataFrame(d.meta,columns=d.all_dimensions()),y,self.money,dates,
+                         periods_per_year=12//d.period_months,period_months=d.period_months)
         self.price=np.divide(self.money,self.volume,out=np.full_like(self.money,np.nan),where=self.volume>0)
     def features(self,t,h):
         x,scale,ever=super().features(t,h)
@@ -78,7 +79,8 @@ class Features(FeatureBuilder):
         self.cache.pop((t,h),None)
         x=x.rename(columns={c:c.replace('volume_','sales_') for c in x.columns})
         x=x.copy();x['horizon']=h
-        for lag in [0,1,2,5,11]:x[f'physical_volume_lag{lag}']=self.volume[:,t-lag]
+        for lag in sorted(set([0,1,2,5,min(11,12//self.period_months-1)])):
+            x[f'physical_volume_lag{lag}']=self.volume[:,t-lag]
         x['physical_volume_mean3']=self.volume[:,t-2:t+1].mean(1)
         x['physical_volume_mean6']=self.volume[:,t-5:t+1].mean(1)
         return x,scale,ever
@@ -87,14 +89,14 @@ def fit_models(d,metric,cutoff,window,predict_only=None):
     start=max(0,cutoff-window+1) if isinstance(window,int) else 0
     if cutoff-start+1<18:return {}
     fingerprint=hashlib.sha256(VERSION.encode()+json.dumps(PARAMS,sort_keys=True).encode()+
-        str((metric,start,cutoff)).encode()+json.dumps(d.all_dimensions()).encode()+d.meta.tobytes()+d.volume[:,start:cutoff+1].tobytes()+d.value[:,start:cutoff+1].tobytes()).hexdigest()[:20]
+        str((metric,start,cutoff,d.periodicity)).encode()+json.dumps(d.all_dimensions()).encode()+d.meta.tobytes()+d.volume[:,start:cutoff+1].tobytes()+d.value[:,start:cutoff+1].tobytes()).hexdigest()[:20]
     folder=OUT/'cache'/fingerprint;folder.mkdir(parents=True,exist_ok=True)
     cached=folder/'predictions.npz'
     if cached.exists():
         with np.load(cached) as z:return {k:z[k] for k in z.files}
     b=Features(d,metric,start,cutoff);last=b.y.shape[1]-1
     frames=[];truths=[];latest=[];scales=[];pt=[];pl=[];priceweights=[]
-    for t in range(11,last):
+    for t in range(max(5,12//d.period_months-1),last):
         for h in [1,2,3]:
             if t+h>last:continue
             x,s,ever=b.features(t,h)
@@ -143,9 +145,9 @@ def base_candidates(d,metric,cutoff):
         if isinstance(window,int) and cutoff+1<window:continue
         hist=y[:,max(0,cutoff-window+1) if isinstance(window,int) else 0:cutoff+1]
         for method in ['Last month','Mean 2','Mean 3','Mean 6','Exponential smoothing','Damped trend','Seasonal naive']:
-            required={'Last month':2,'Mean 2':2,'Mean 3':3,'Mean 6':6,'Damped trend':6,'Seasonal naive':12}
+            required={'Last month':2,'Mean 2':2,'Mean 3':3,'Mean 6':6,'Damped trend':6,'Seasonal naive':12//d.period_months}
             if method in required and window!=required[method]:continue
-            try:pred=np.stack([baseline(hist,method,h) for h in [1,2,3]],axis=1)
+            try:pred=np.stack([baseline(hist,method,h,12//d.period_months) for h in [1,2,3]],axis=1)
             except ValueError:continue
             out[f'base|{method}|{window}']=pred
     if metric=='value_1000_toman':
@@ -163,7 +165,8 @@ def base_candidates(d,metric,cutoff):
     # identical origins and forecast horizons as the CatBoost recipes.
     if cutoff>=11:
         for h in [1,2,3]:
-            for name,pred in light_candidates(d.volume[:,:cutoff+1],d.value[:,:cutoff+1],metric,h).items():
+            for name,pred in light_candidates(d.volume[:,:cutoff+1],d.value[:,:cutoff+1],metric,h,
+                                              season_length=12//d.period_months).items():
                 key=f'light|{name}'
                 if key not in out:out[key]=np.zeros((len(d.meta),3))
                 out[key][:,h-1]=pred
@@ -299,7 +302,7 @@ def forecast_component(d,metric,cutoff,name):
 
 def dataset_policy(d,metric,cutoff):
     """Re-select on completed targets of the supplied dataset, never future dates."""
-    digest=hashlib.sha256(VERSION.encode()+POLICY_VERSION.encode()+metric.encode()+json.dumps(d.all_dimensions()).encode()+d.meta.tobytes()+d.volume[:,:cutoff+1].tobytes()+d.value[:,:cutoff+1].tobytes()).hexdigest()[:24]
+    digest=hashlib.sha256(VERSION.encode()+POLICY_VERSION.encode()+metric.encode()+d.periodicity.encode()+json.dumps(d.all_dimensions()).encode()+d.meta.tobytes()+d.volume[:,:cutoff+1].tobytes()+d.value[:,:cutoff+1].tobytes()).hexdigest()[:24]
     cached=OUT/'runtime_policies'/f'{digest}.json';cached.parent.mkdir(exist_ok=True)
     if cached.exists():return json.loads(cached.read_text(encoding='utf-8'))
     # All 3 targets for each origin must be known at the selection cutoff.
@@ -331,14 +334,15 @@ def future_request(d,request):
     metric=request.get('metric','volume_kg');d.metric(metric)
     horizon=int(request.get('horizon',1))
     if not 1<=horizon<=3:raise ValueError('افق پشتیبانی‌شده یک تا سه ماه بعد از آخرین ماه فایل است.')
+    d=d.for_market(request.get('filters',{}).get('Market'))
     mask=d.mask(request.get('filters',{}))
     if not mask.any():raise ValueError('ترکیب انتخاب‌شده در فایل موجود نیست.')
     cells,recipe=automatic_forecast(d,metric,horizon)
-    target=str(pd.Period(d.months[-1],freq='M')+horizon)
+    target=str(pd.Period(d.months[-1],freq='M')+horizon*d.period_months)
     history=[{'month':d.months[j],'value':float(d.metric(metric)[mask,j].sum())} for j in range(max(0,len(d.months)-12),len(d.months))]
     benchmark=None;selected_benchmark=None
     report=OUT/'results.json'
-    if report.exists() and any(word in d.source.lower() for word in ['mast','yoghurt','ماست']):
+    if d.periodicity=='monthly' and 'Market' not in d.all_dimensions() and report.exists() and any(word in d.source.lower() for word in ['mast','yoghurt','ماست']):
         result=json.loads(report.read_text(encoding='utf-8'))
         if result.get('plan',{}).get('selection_version')!=POLICY_VERSION:result={'test':[]}
         benchmark=next((r for r in result['test'] if r['metric']==metric and r['level']=='city_segment' and r['horizon']==horizon),None)
@@ -351,6 +355,7 @@ def future_request(d,request):
                                 'actual':actual,'predicted':predicted,
                                 'ape':abs(predicted-actual)/actual if actual>0 else None}
     return {'source':d.source,'metric':metric,'unit':d.volume_unit if metric=='volume_kg' else d.value_unit,
+            'periodicity':d.periodicity,'period_months':d.period_months,
             'cutoff':d.months[-1],'target':target,'horizon':horizon,'window':len(d.months),'method':'automatic',
             'calibration':recipe,'prediction':float(cells[mask].sum()),'actual_if_known':None,
             'absolute_error_if_known':None,'rows':int(mask.sum()),'history':history,'filters':request.get('filters',{}),
