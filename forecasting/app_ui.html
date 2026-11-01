@@ -669,7 +669,7 @@ function selectionEvidenceHtml(r){
   const detail=origins.map(x=>{
     const w=Number.isFinite(x.wape)?percent(x.wape):'نامشخص';
     const width=Number.isFinite(x.wape)?Math.min(100,Math.max(1,x.wape*300)):0;
-    return '<div class="evidence-origin"><div class="evidence-origin-head"><strong><bdi dir="ltr">'+escapeHtml(x.origin)+'</bdi> → <bdi dir="ltr">'+escapeHtml(x.target)+'</bdi></strong><em>'+w+'</em></div>'+
+    return '<div class="evidence-origin"><div class="evidence-origin-head"><strong><bdi dir="ltr">'+escapeHtml(periodName(x.origin,r.period_months))+'</bdi> → <bdi dir="ltr">'+escapeHtml(periodName(x.target,r.period_months))+'</bdi></strong><em>'+w+'</em></div>'+
       '<div class="evidence-track" role="img" aria-label="WAPE تاریخی: '+escapeHtml(w)+'"><span class="evidence-fill" style="width:'+width.toFixed(2)+'%;background:#c06c84"></span></div>'+
       '<div class="evidence-values">مجموع واقعی: '+persian(x.actual)+' · مجموع پیش‌بینی: '+persian(x.predicted)+
       ' · مجموع خطای مطلق سلول‌ها: '+persian(x.absolute_error)+'</div></div>';
@@ -693,7 +693,7 @@ function selectionEvidenceHtml(r){
     '<div class="evidence-reason">'+escapeHtml(explanation)+'</div>'+
     '<div class="evidence-all"><details><summary>مشاهده جدول کامل '+persian(valid.length)+' روش و خطاهای آن‌ها</summary>'+
     '<div class="evidence-table-wrap"><table class="evidence-table"><thead><tr><th>رتبه</th><th>روش / Recipe</th><th>WAPE</th></tr></thead><tbody>'+table+'</tbody></table></div></details></div>'+
-    '<p>این رتبه‌بندی برای <strong>همه سری‌های سطح مکانی انتخاب‌شده</strong> محاسبه شده است؛ نه فقط شهر یا برند فیلترشده در این درخواست. خطای تاریخی، تضمین دقت آینده نیست.</p></section>';
+    '<p>این رتبه‌بندی برای <strong>همه سری‌های سطح مکانی انتخاب‌شده</strong> محاسبه شده است؛ نه فقط مکان یا برند فیلترشده در این درخواست. خطای تاریخی، تضمین دقت آینده نیست.</p></section>';
 }
 function renderFuture(r){
   const unit=escapeHtml(r.unit),calibration=r.calibration?.validation_wape;
@@ -710,7 +710,7 @@ function renderFuture(r){
   const history=r.history||[],previous=history.length?history[history.length-1]:null;
   const compare=previous&&Number.isFinite(previous.value)&&previous.value>0&&Number.isFinite(r.prediction)?
     (r.prediction-previous.value)/previous.value:null;
-  const previousLine=compare===null?'':'<div class="comparison-note">نسبت به فروش واقعی '+escapeHtml(previous.month)+
+  const previousLine=compare===null?'':'<div class="comparison-note">نسبت به فروش واقعی '+escapeHtml(periodName(previous.month,r.period_months))+
     ' ('+persian(previous.value)+' '+unit+'): '+(compare>0?'+':'')+percent(compare)+'</div>';
   const scoreHtml=score===null?'':'<div class="kpi"><div class="label">'+escapeHtml(scoreLabel)+'</div>'+
     '<strong>'+percent(score)+'</strong><small>'+escapeHtml(scorePeriod)+
