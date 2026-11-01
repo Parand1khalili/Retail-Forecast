@@ -231,6 +231,13 @@ input[type=text]:focus,select:focus{border-color:var(--focus)}
   .resulthead{flex-wrap:wrap}
 }
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
+
+.kpis:has(.kpi:only-child){grid-template-columns:1fr}
+.kpi.primary:only-child{border:0}
+.model-details{margin-top:17px;border-top:1px solid var(--line);padding-top:12px}
+.model-details>summary{cursor:pointer;color:var(--navy);font-size:13px;font-weight:650;padding:6px 0}
+.model-details[open]>summary{margin-bottom:8px}
+.model-details .recipe{margin-top:2px}
 </style></head><body><div class="wrap">
 <header class="mast"><div class="header-content"><div><div class="eyebrow">EMRC · RETAIL AUDIT</div><h1>پیش‌بینی فروش</h1><p>از فایل فروش تا برآورد ماه آینده و مقایسه مستند روش‌های پیش‌بینی</p></div><div class="header-side"><strong>افق ۱ تا ۳ ماه</strong></div></div></header>
 <div class="wizard-layout">
@@ -620,14 +627,47 @@ function selectionEvidenceHtml(r){
     '<p>این رتبه‌بندی برای <strong>کل داده بارگذاری‌شده</strong> محاسبه شده است؛ نه فقط شهر یا برند فیلترشده در این درخواست. خطای تاریخی، تضمین دقت آینده نیست.</p></section>';
 }
 function renderFuture(r){
-  const unit=escapeHtml(r.unit),quality=r.benchmark?.wape??null,calibration=r.calibration?.validation_wape??null;
-  const hasSelection=calibration!==null;
-  const score=hasSelection?calibration:(r.calibration?.price_guard?null:quality);
-  const scoreLabel=hasSelection?'WAPE زمان انتخاب Recipe روی کل فایل':'WAPE ارزیابی مرجع (در صورت وجود)';
+  const unit=escapeHtml(r.unit),calibration=r.calibration?.validation_wape;
+  const selectionScore=typeof calibration==='number'&&Number.isFinite(calibration)?calibration:null;
+  const benchmarkScore=typeof r.benchmark?.wape==='number'&&Number.isFinite(r.benchmark.wape)?r.benchmark.wape:null;
   const recipe=r.calibration||{},blended=(recipe.components||[]).length>1;
-  const family=recipe.price_guard?'قاعده مقاوم جهش قیمت':blended?'ترکیب وزنی مدل‌ها':recipeComponent(recipe.name).label;
-  el('results').innerHTML=`<div class="resulthead"><div><div class="eyebrow" style="color:#71829b">FUTURE FORECAST</div><h2>پیش‌بینی <bdi dir="ltr">${r.target}</bdi></h2><div class="source">${persian(r.rows)} ترکیب شهری/محصولی؛ ${r.metric==='volume_kg'?'فروش حجمی':'فروش ریالی'}</div></div><span class="badge">انتخاب و آموزش خودکار</span></div><div class="kpis"><div class="kpi primary"><div class="label">برآورد ماه آیندهٔ انتخاب‌شده</div><strong>${persian(r.prediction)}</strong><small>${unit}</small></div><div class="kpi"><div class="label">${scoreLabel}</div><strong>${score===null?'دادهٔ کافی نیست':percent(score)}</strong><small>WAPE؛ مجموع خطای مطلق ÷ فروش واقعی</small></div></div><div class="chartbox"><h3>فروش گذشته و پیش‌بینی ماهِ بدون داده</h3>${chart(r)}<div class="legend"><span><i style="background:#6c5b7b"></i>دادهٔ موجود</span><span><i style="background:#f67280"></i>ماه آینده</span></div></div><div class="details"><div class="detail"><strong>روش منتخب سامانه</strong><span>${escapeHtml(family)}</span></div><div class="detail"><strong>دادهٔ در دسترس برای آموزش</strong><span>${persian(r.window)} ماه تا <bdi dir="ltr">${r.cutoff}</bdi>؛ نمودار حداکثر ۱۲ ماه اخیر را نشان می‌دهد.</span></div><div class="detail"><strong>مقدار واقعی ماه مقصد</strong><span>در فایل ورودی موجود نیست.</span></div><div class="detail"><strong>معنی خطای نمایش‌داده‌شده</strong><span>خطای مجموعهٔ ترکیب‌های شهری/محصولی؛ تضمین دقت همین تک‌محصول یا ماه آینده نیست.</span></div></div>${recipeHtml(r)}${selectionEvidenceHtml(r)}<div class="note">${escapeHtml(r.note)}</div>`;
+  const family=recipe.price_guard?'قاعده مقاوم به جهش قیمت':blended?'ترکیب وزنی مدل‌ها':recipeComponent(recipe.name).label;
+  const origins=recipe.validation_origins||[];
+  const score=selectionScore!==null?selectionScore:(recipe.price_guard?null:benchmarkScore);
+  const scoreLabel=selectionScore!==null?'WAPE اعتبارسنجی مدل · کل فایل':'WAPE آزمون تاریخی نمونه ماست';
+  const scorePeriod=selectionScore!==null?
+    (origins.length?'مبدأهای '+origins.join('، '):'دوره ارزیابی تاریخی همین فایل'):
+    ('آزمون گذشته · '+(r.selected_benchmark?.target||'مجموعه مرجع ماست'));
+  const history=r.history||[],previous=history.length?history[history.length-1]:null;
+  const compare=previous&&Number.isFinite(previous.value)&&previous.value>0&&Number.isFinite(r.prediction)?
+    (r.prediction-previous.value)/previous.value:null;
+  const previousLine=compare===null?'':'<div class="comparison-note">نسبت به فروش واقعی '+escapeHtml(previous.month)+
+    ' ('+persian(previous.value)+' '+unit+'): '+(compare>0?'+':'')+percent(compare)+'</div>';
+  const scoreHtml=score===null?'':'<div class="kpi"><div class="label">'+escapeHtml(scoreLabel)+'</div>'+
+    '<strong>'+percent(score)+'</strong><small>'+escapeHtml(scorePeriod)+
+    ' · خطای تاریخی، نه درصد اطمینان</small></div>';
+  const ariaScore=score!==null?'دو شاخص خلاصه':'یک شاخص خلاصه';
+  el('results').innerHTML=
+    '<div class="resulthead"><div><div class="eyebrow">FORECAST RESULT</div><h2>پیش‌بینی فروش · <bdi dir="ltr">'+escapeHtml(r.target)+'</bdi></h2>'+
+    '<div class="source">'+persian(r.rows)+' ترکیب شهر/محصول · '+(r.metric==='volume_kg'?'فروش حجمی':'فروش ریالی')+
+    '</div></div><span class="badge">محاسبه تکمیل شد</span></div>'+
+    '<section class="kpis" aria-label="'+ariaScore+'"><div class="kpi primary"><div class="label">مقدار پیش‌بینی‌شده</div>'+
+    '<strong>'+persian(r.prediction)+' <small>'+unit+'</small></strong>'+previousLine+'</div>'+scoreHtml+'</section>'+
+    '<div class="chartbox"><h3>روند فروش و برآورد ماه هدف</h3>'+chart(r)+
+    '<div class="legend"><span><i style="background:#355c7d"></i>فروش ثبت‌شده</span>'+
+    '<span><i style="background:#6c5b78;border-top:1px dashed #fff"></i>پیش‌بینی (خط‌چین)</span></div></div>'+
+    '<section class="evidence"><div class="evidence-header"><div><h3>مبنای انتخاب روش</h3>'+
+    '<p>روش انتخاب‌شده: '+escapeHtml(family)+'</p></div></div></section>'+
+    selectionEvidenceHtml(r)+
+    '<details class="model-details"><summary>جزئیات روش، ورودی و ارزیابی</summary>'+
+    recipeHtml(r)+
+    '<div class="details"><div class="detail"><strong>دوره داده موجود</strong><span>'+persian(r.window)+
+    ' ماه تا <bdi dir="ltr">'+escapeHtml(r.cutoff)+'</bdi></span></div>'+
+    '<div class="detail"><strong>مقدار واقعی ماه هدف</strong><span>هنوز در فایل ورودی موجود نیست.</span></div>'+
+    '<div class="detail"><strong>تفسیر WAPE</strong><span>خطای تاریخی در سطح شهر × محصول برای کل فایل؛ تضمین دقت یک ماه یا برند خاص نیست.</span></div>'+
+    '</div></details><div class="note">'+escapeHtml(r.note)+'</div>';
 }
+
 el('run').onclick=async()=>{
   if(!data||busy||schemaNeedsReview)return;
   let begun=Date.now(),timer=null;
@@ -645,7 +685,7 @@ el('run').onclick=async()=>{
     resultReady=false;status('پیش‌بینی تکمیل نشد: '+e.message,true);
   }finally{if(timer!==null)clearInterval(timer);lockButtons(false)}
 };
-function appendSelectedBenchmark(r){let host=el('results').querySelector('.details');let add=(label,value)=>{let card=document.createElement('div');card.className='detail';let title=document.createElement('strong');title.textContent=label;let text=document.createElement('span');text.textContent=value;card.append(title,text);host.append(card)};let c=r.calibration;if(typeof c.validation_wape==='number')add('خطای زمان انتخاب در همین فایل',percent(c.validation_wape)+'؛ بر پایهٔ مبدأهای '+(c.validation_origins||[]).join('، '));let b=r.selected_benchmark;if(b&&b.ape!==null)add('آزمون همین انتخاب در '+b.target,'خطای '+percent(b.ape)+' در پیش‌بینی از پایان مه ۲۰۲۶؛ این فقط یک ماه آزمون است.')}
+function appendSelectedBenchmark(r){let host=el('results').querySelector('.details');if(!host)return;let add=(label,value)=>{let card=document.createElement('div');card.className='detail';let title=document.createElement('strong');title.textContent=label;let text=document.createElement('span');text.textContent=value;card.append(title,text);host.append(card)};let c=r.calibration;if(typeof c.validation_wape==='number')add('خطای زمان انتخاب در همین فایل',percent(c.validation_wape)+'؛ بر پایهٔ مبدأهای '+(c.validation_origins||[]).join('، '));let b=r.selected_benchmark;if(b&&b.ape!==null)add('آزمون همین انتخاب در '+b.target,'خطای '+percent(b.ape)+' در پیش‌بینی از پایان مه ۲۰۲۶؛ این فقط یک ماه آزمون است.')}
 document.querySelectorAll('.progress-step').forEach(button=>{
   button.onclick=()=>showStage(Number(button.dataset.step));
 });
