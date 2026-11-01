@@ -234,6 +234,8 @@ input[type=text]:focus,select:focus{border-color:var(--focus)}
 
 .kpis:has(.kpi:only-child){grid-template-columns:1fr}
 .kpi.primary:only-child{border:0}
+.selected-method{padding:12px 0 0;margin-top:10px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+.selected-method strong{color:var(--ink);font-weight:700}
 .model-details{margin-top:17px;border-top:1px solid var(--line);padding-top:12px}
 .model-details>summary{cursor:pointer;color:var(--navy);font-size:13px;font-weight:650;padding:6px 0}
 .model-details[open]>summary{margin-bottom:8px}
@@ -656,8 +658,7 @@ function renderFuture(r){
     '<div class="chartbox"><h3>روند فروش و برآورد ماه هدف</h3>'+chart(r)+
     '<div class="legend"><span><i style="background:#355c7d"></i>فروش ثبت‌شده</span>'+
     '<span><i style="background:#6c5b78;border-top:1px dashed #fff"></i>پیش‌بینی (خط‌چین)</span></div></div>'+
-    '<section class="evidence"><div class="evidence-header"><div><h3>مبنای انتخاب روش</h3>'+
-    '<p>روش انتخاب‌شده: '+escapeHtml(family)+'</p></div></div></section>'+
+    '<div class="selected-method">روش منتخب: <strong>'+escapeHtml(family)+'</strong></div>'+
     selectionEvidenceHtml(r)+
     '<details class="model-details"><summary>جزئیات روش، ورودی و ارزیابی</summary>'+
     recipeHtml(r)+
