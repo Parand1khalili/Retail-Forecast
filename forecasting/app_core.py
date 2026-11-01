@@ -11,7 +11,7 @@ import hashlib, json, re, zipfile
 import xml.etree.ElementTree as ET
 import numpy as np
 import pandas as pd
-from schema import REQUIRED, SchemaError, mapping_prompt, metric_kind, metric_unit, months_in_header, normalized, resolve_fields
+from schema import REQUIRED, SchemaError, mapping_prompt, metric_kind, metric_unit, months_in_header, normalized, resolve_fields, detect_layout
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT/'outputs/forecast_app/cache'
@@ -48,7 +48,7 @@ def parse_master(path,mapping=None):
     manual_fields=mapping.get('fields',{})
     manual_measures=mapping.get('measure_values',{})
     manual_units=mapping.get('units',{})
-    sheets=[];pending_prompt=None;units={}
+    sheets=[];pending_prompt=None;units={};dimension_labels={};shown_dimensions=set();preview=None
     with zipfile.ZipFile(path) as z:
         shared=[]
         if 'xl/sharedStrings.xml' in z.namelist():
@@ -72,10 +72,21 @@ def parse_master(path,mapping=None):
             if head is None:continue
             if len(set(months.values()))!=len(months):
                 raise ValueError(f'در شیت {sh.attrib["name"]} چند ستون برای یک ماه وجود دارد؛ ستون درست را مشخص کنید.')
-            fields,_=resolve_fields(head,manual_fields)
-            if any(field not in fields for field in REQUIRED):
-                if pending_prompt is None:pending_prompt=mapping_prompt(sh.attrib['name'],head,fields)
+            fields,_,categories,detected_months,_=detect_layout(head,mapping)
+            if any(field not in fields for field in REQUIRED) or len(detected_months)<2:
+                if pending_prompt is None:
+                    pending_prompt=mapping_prompt(sh.attrib['name'],head,fields,
+                                                  category_columns=categories,dates=detected_months)
                 continue
+            months=detected_months
+            if len(set(months.values()))!=len(months):
+                raise ValueError(f'در شیت {sh.attrib["name"]} چند ستون برای یک ماه وجود دارد.')
+            # Unknown pre-measure columns remain categorical features, not discarded.
+            extras=[(str(head[i]),i) for i in categories if i not in fields.values()]
+            if len({normalized(name) for name,_ in extras})!=len(extras):
+                raise ValueError('نام ستون‌های دسته‌بندی تکراری است؛ عنوان‌های متفاوت تعیین کنید.')
+            for name,_ in extras:dimension_labels.setdefault(normalized(name),name)
+            shown_dimensions.update(field for field in DIMS if field in fields)
             ordered=sorted(months)
             bykey=defaultdict(lambda:np.zeros((2,len(ordered)),dtype=float))
             metric_keys=[set(),set()]
@@ -90,7 +101,8 @@ def parse_master(path,mapping=None):
                 if kind is None:continue
                 metric_index=0 if kind=='volume_kg' else 1
                 labels[kind]=str(metric)
-                key=tuple(str(vals.get(fields[dim],'')).strip() if dim in fields else 'Not specified' for dim in DIMS)
+                key=tuple(str(vals.get(fields[dim],'')).strip() if dim in fields else 'Not specified'
+                          for dim in DIMS)+tuple(str(vals.get(i,'')).strip() for _,i in extras)
                 if not key[0] or not key[2]:continue
                 metric_keys[metric_index].add(key)
                 a=bykey[key][metric_index]
@@ -102,10 +114,13 @@ def parse_master(path,mapping=None):
                         a[j]+=num;valid[j]+=1
                     except (TypeError,ValueError):missing[j]+=1
             if not metric_keys[0] and not metric_keys[1]:
-                if pending_prompt is None:pending_prompt=mapping_prompt(sh.attrib['name'],head,fields,sorted(seen_measures))
+                if pending_prompt is None:
+                    pending_prompt=mapping_prompt(sh.attrib['name'],head,fields,sorted(seen_measures),
+                                                  categories,months)
                 continue
             if metric_keys[0]!=metric_keys[1]:
-                raise SchemaError(mapping_prompt(sh.attrib['name'],head,fields,sorted(seen_measures)))
+                raise SchemaError(mapping_prompt(sh.attrib['name'],head,fields,sorted(seen_measures),
+                                                 categories,months))
             partial=[months[ordered[j]] for j in range(len(ordered)) if valid[j]>0 and missing[j]>0]
             if partial:raise ValueError(f'در شیت {sh.attrib["name"]} برای ماه‌های {", ".join(partial)} سلول فروش خالی است؛ قبل از پیش‌بینی بررسی شود.')
             keep=[j for j in range(len(ordered)) if valid[j]>0]
@@ -116,12 +131,30 @@ def parse_master(path,mapping=None):
                     raise ValueError(f'واحد شاخص {kind} بین شیت‌ها فرق دارد؛ آن‌ها را بدون تبدیل نمی‌توان ترکیب کرد.')
                 units[kind]=unit
             dates=[months[ordered[j]] for j in keep]
-            sheets.append((dates,{k:v[:,keep] for k,v in bykey.items()},sh.attrib['name']))
+            if preview is None:
+                preview=mapping_prompt(sh.attrib['name'],head,fields,sorted(seen_measures),
+                                       categories,months)
+                preview['mapping_required']=False
+            sheets.append((dates,{k:v[:,keep] for k,v in bykey.items()},
+                           sh.attrib['name'],[normalized(name) for name,_ in extras]))
     if not sheets:
         if pending_prompt:raise SchemaError(pending_prompt)
         raise ValueError('هیچ شیت فروش ماهانه پیدا نشد. فایل باید دست‌کم دو ستون ماهانه و ردیف‌های حجم و مبلغ فروش داشته باشد.')
     # Latest report sheet is authoritative for overlapping monthly columns.
     sheets.sort(key=lambda s:max(s[0]))
+    extra_ids=sorted(dimension_labels)
+    dims=DIMS+[dimension_labels[k] for k in extra_ids]
+    normalized_sheets=[]
+    for dates,series,sheet_name,present_extras in sheets:
+        positions={name:i for i,name in enumerate(present_extras)}
+        aligned={}
+        for key,val in series.items():
+            new_key=key[:len(DIMS)]+tuple(key[len(DIMS)+positions[k]]
+                  if k in positions else 'Not specified' for k in extra_ids)
+            if new_key in aligned:aligned[new_key]+=val
+            else:aligned[new_key]=val.copy()
+        normalized_sheets.append((dates,aligned,sheet_name))
+    sheets=normalized_sheets
     keys=sorted(set().union(*(set(s[1]) for s in sheets)))
     dates=sorted(set().union(*(set(s[0]) for s in sheets)))
     if len(dates)<2:raise ValueError('دست‌کم دو ماه فروشِ کامل برای پیش‌بینی لازم است.')
@@ -136,7 +169,12 @@ def parse_master(path,mapping=None):
         # than combining overlapping report snapshots.
         a[:,:,jj]=0
         for key,val in series.items():a[:,index[key],jj]=val
-    return Dataset(np.array(keys,dtype=str),a[0],a[1],dates,Path(path).name,units['volume_kg'],units['value_1000_toman'])
+    if preview is not None:
+        preview['dimension_columns']=[name for name in preview['dimension_columns']
+                                      if normalized(name) in {normalized(d) for d in dims}]
+        preview['shown_dimensions']=[d for d in dims if d in shown_dimensions or d not in DIMS]
+    return Dataset(np.array(keys,dtype=str),a[0],a[1],dates,Path(path).name,
+                   units['volume_kg'],units['value_1000_toman'],dims,preview)
 
 @dataclass
 class Dataset:
@@ -147,6 +185,11 @@ class Dataset:
     source:str
     volume_unit:str='kg'
     value_unit:str='هزار تومان'
+    dimension_names:list[str]|None=None
+    schema:dict|None=None
+
+    def all_dimensions(self):
+        return self.dimension_names or DIMS
 
     @classmethod
     def builtin(cls):
@@ -160,12 +203,18 @@ class Dataset:
         with path.open('rb') as f:
             for chunk in iter(lambda:f.read(4*1024*1024),b''):digest.update(chunk)
         signature=hashlib.sha256(json.dumps(mapping or {},sort_keys=True,ensure_ascii=False).encode('utf-8')).hexdigest()[:12]
-        out=CACHE/('v2_'+digest.hexdigest()+'_'+signature+'.npz')
+        out=CACHE/('v3_'+digest.hexdigest()+'_'+signature+'.npz')
         if out.exists():
             with np.load(out) as z:
-                return cls(z['meta'],z['volume'],z['value'],z['months'].astype(str).tolist(),path.name,str(z['volume_unit']),str(z['value_unit']))
+                schema=json.loads(str(z['schema_json'])) if 'schema_json' in z.files else None
+                dims=z['dimension_names'].astype(str).tolist() if 'dimension_names' in z.files else DIMS
+                return cls(z['meta'],z['volume'],z['value'],z['months'].astype(str).tolist(),
+                           path.name,str(z['volume_unit']),str(z['value_unit']),dims,schema)
         obj=parse_master(path,mapping)
-        np.savez_compressed(out,meta=obj.meta,volume=obj.volume,value=obj.value,months=np.array(obj.months),volume_unit=obj.volume_unit,value_unit=obj.value_unit)
+        np.savez_compressed(out,meta=obj.meta,volume=obj.volume,value=obj.value,
+                            months=np.array(obj.months),volume_unit=obj.volume_unit,
+                            value_unit=obj.value_unit,dimension_names=np.array(obj.all_dimensions()),
+                            schema_json=json.dumps(obj.schema,ensure_ascii=False))
         return obj
 
     def metric(self,key):
@@ -175,14 +224,18 @@ class Dataset:
 
     def mask(self,filters):
         mask=np.ones(len(self.meta),dtype=bool)
-        for j,dim in enumerate(DIMS):
+        for j,dim in enumerate(self.all_dimensions()):
             value=filters.get(dim)
             if value and value!='*':mask &= self.meta[:,j]==value
         return mask
 
     def options(self):
-        return {'source':self.source,'months':self.months,'dimensions':DIMS,
-                'rows':self.meta.tolist(),'series_count':len(self.meta),
+        dims=self.all_dimensions()
+        visible=(self.schema or {}).get('shown_dimensions') or dims
+        idx=[dims.index(d) for d in visible]
+        return {'source':self.source,'months':self.months,'dimensions':visible,
+                'rows':self.meta[:,idx].tolist(),'series_count':len(self.meta),
+                'schema':self.schema,
                 'metric_labels':METRICS,'units':{'volume_kg':self.volume_unit,'value_1000_toman':self.value_unit}}
 
 def baseline(hist,method,horizon):
