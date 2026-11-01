@@ -98,8 +98,6 @@ def parse_master(path,mapping=None):
             valid=np.zeros(len(ordered),dtype=int);missing=np.zeros(len(ordered),dtype=int)
             seen_measures=set();labels={}
             for vals in rows:
-                if 'Market' in fields and normalized(vals.get(fields['Market'])) not in ['city','cities','شهر','شهرها']:
-                    continue
                 metric=vals.get(fields['Measure'])
                 if metric is not None and len(seen_measures)<12:seen_measures.add(str(metric))
                 kind=metric_kind(metric,manual_measures)
