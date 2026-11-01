@@ -1,7 +1,7 @@
 """Local RA report reader and cutoff-safe forecasting service.
 
-No network services are used. Monthly columns are published RA estimates; all
-calculations below use the City market only, so geographic views never overlap.
+No network services are used. Source observations are monthly or two-monthly;
+geographic levels stay separate to avoid counting overlapping aggregates.
 """
 from __future__ import annotations
 from dataclasses import dataclass
@@ -45,6 +45,9 @@ def read_sheet(z, shared, xml):
 
 def parse_master(path,mapping=None):
     mapping=mapping or {}
+    periodicity=mapping.get('periodicity','monthly')
+    if periodicity not in ('monthly','bimonthly'):raise ValueError('نوع دوره باید ماهانه یا دوماهه باشد.')
+    period_months=1 if periodicity=='monthly' else 2
     manual_fields=mapping.get('fields',{})
     manual_measures=mapping.get('measure_values',{})
     manual_units=mapping.get('units',{})
@@ -67,7 +70,7 @@ def parse_master(path,mapping=None):
             for _ in range(10):
                 try:candidate=next(rows)
                 except StopIteration:break
-                maybe=months_in_header(candidate)
+                maybe=months_in_header(candidate,periodicity)
                 if len(maybe)>=2:head,months=candidate,maybe;break
             if head is None:continue
             # Resolve the Measure/Index Name boundary BEFORE checking duplicate
@@ -84,7 +87,7 @@ def parse_master(path,mapping=None):
             if len(set(months.values()))!=len(months):
                 raise ValueError(f'در شیت {sh.attrib["name"]} چند ستون برای یک ماه وجود دارد.')
             # Unknown pre-measure columns remain categorical features, not discarded.
-            extras=[(str(head[i]),i) for i in categories if i not in fields.values()]
+            extras=([('Market',fields['Market'])] if 'Market' in fields else [])+[(str(head[i]),i) for i in categories if i not in fields.values()]
             if len({normalized(name) for name,_ in extras})!=len(extras):
                 raise ValueError('نام ستون‌های دسته‌بندی تکراری است؛ عنوان‌های متفاوت تعیین کنید.')
             for name,_ in extras:dimension_labels.setdefault(normalized(name),name)
@@ -137,11 +140,12 @@ def parse_master(path,mapping=None):
                 preview=mapping_prompt(sh.attrib['name'],head,fields,sorted(seen_measures),
                                        categories,months)
                 preview['mapping_required']=False
+                preview['periodicity']=periodicity
             sheets.append((dates,{k:v[:,keep] for k,v in bykey.items()},
                            sh.attrib['name'],[normalized(name) for name,_ in extras]))
     if not sheets:
         if pending_prompt:raise SchemaError(pending_prompt)
-        raise ValueError('هیچ شیت فروش ماهانه پیدا نشد. فایل باید دست‌کم دو ستون ماهانه و ردیف‌های حجم و مبلغ فروش داشته باشد.')
+        raise ValueError('هیچ شیت فروش با دوره‌های انتخاب‌شده پیدا نشد. نوع دوره (ماهانه/دوماهه)، سرتیترها و ردیف‌های حجم و مبلغ را بررسی کنید.')
     # Latest report sheet is authoritative for overlapping monthly columns.
     sheets.sort(key=lambda s:max(s[0]))
     extra_ids=sorted(dimension_labels)
@@ -159,10 +163,10 @@ def parse_master(path,mapping=None):
     sheets=normalized_sheets
     keys=sorted(set().union(*(set(s[1]) for s in sheets)))
     dates=sorted(set().union(*(set(s[0]) for s in sheets)))
-    if len(dates)<2:raise ValueError('دست‌کم دو ماه فروشِ کامل برای پیش‌بینی لازم است.')
+    if len(dates)<2:raise ValueError('دست‌کم دو دوره فروش کامل برای پیش‌بینی لازم است.')
     periods=pd.PeriodIndex(dates,freq='M')
-    if not all(periods[i]+1==periods[i+1] for i in range(len(periods)-1)):
-        raise ValueError('ماه‌های فروش در فایل پیوسته نیستند؛ لطفاً یک مستر با ستون‌های ماهانهٔ کامل بدهید.')
+    if not all(periods[i]+period_months==periods[i+1] for i in range(len(periods)-1)):
+        raise ValueError('دوره‌های فروش پیوسته نیستند؛ ستون‌های گمشده یا نوع دوره را بررسی کنید.')
     a=np.zeros((2,len(keys),len(dates)),dtype=float)
     index={k:i for i,k in enumerate(keys)};di={d:i for i,d in enumerate(dates)}
     for months,series,_ in sheets:
@@ -174,7 +178,7 @@ def parse_master(path,mapping=None):
     if preview is not None:
         preview['shown_dimensions']=[d for d in dims if d in shown_dimensions or d not in DIMS]
     return Dataset(np.array(keys,dtype=str),a[0],a[1],dates,Path(path).name,
-                   units['volume_kg'],units['value_1000_toman'],dims,preview)
+                   units['volume_kg'],units['value_1000_toman'],dims,preview,periodicity)
 
 @dataclass
 class Dataset:
@@ -187,6 +191,26 @@ class Dataset:
     value_unit:str='هزار تومان'
     dimension_names:list[str]|None=None
     schema:dict|None=None
+    periodicity:str='monthly'
+
+    @property
+    def period_months(self):
+        return 2 if self.periodicity=='bimonthly' else 1
+
+    def for_market(self,market=None):
+        """Select exactly one Market level; overlapping totals must not mix."""
+        if 'Market' not in self.all_dimensions():return self
+        col=self.all_dimensions().index('Market')
+        levels=set(self.meta[:,col])
+        if not market or market=='*':
+            if len(levels)>1:
+                raise ValueError('ابتدا سطح بازار (Market) را انتخاب کنید تا سطوح مکانی با هم جمع نشوند.')
+            return self
+        selected=self.meta[:,col]==market
+        if not selected.any():raise ValueError('سطح بازار انتخاب‌شده موجود نیست.')
+        return Dataset(self.meta[selected],self.volume[selected],self.value[selected],
+                       self.months,self.source,self.volume_unit,self.value_unit,
+                       self.dimension_names,self.schema,self.periodicity)
 
     def all_dimensions(self):
         return self.dimension_names or DIMS
@@ -203,18 +227,19 @@ class Dataset:
         with path.open('rb') as f:
             for chunk in iter(lambda:f.read(4*1024*1024),b''):digest.update(chunk)
         signature=hashlib.sha256(json.dumps(mapping or {},sort_keys=True,ensure_ascii=False).encode('utf-8')).hexdigest()[:12]
-        out=CACHE/('v3_'+digest.hexdigest()+'_'+signature+'.npz')
+        out=CACHE/('v4_'+digest.hexdigest()+'_'+signature+'.npz')
         if out.exists():
             with np.load(out) as z:
                 schema=json.loads(str(z['schema_json'])) if 'schema_json' in z.files else None
                 dims=z['dimension_names'].astype(str).tolist() if 'dimension_names' in z.files else DIMS
                 return cls(z['meta'],z['volume'],z['value'],z['months'].astype(str).tolist(),
-                           path.name,str(z['volume_unit']),str(z['value_unit']),dims,schema)
+                           path.name,str(z['volume_unit']),str(z['value_unit']),dims,schema,
+                           str(z['periodicity']) if 'periodicity' in z.files else 'monthly')
         obj=parse_master(path,mapping)
         np.savez_compressed(out,meta=obj.meta,volume=obj.volume,value=obj.value,
                             months=np.array(obj.months),volume_unit=obj.volume_unit,
                             value_unit=obj.value_unit,dimension_names=np.array(obj.all_dimensions()),
-                            schema_json=json.dumps(obj.schema,ensure_ascii=False))
+                            schema_json=json.dumps(obj.schema,ensure_ascii=False),periodicity=obj.periodicity)
         return obj
 
     def metric(self,key):
@@ -235,10 +260,10 @@ class Dataset:
         idx=[dims.index(d) for d in visible]
         return {'source':self.source,'months':self.months,'dimensions':visible,
                 'rows':self.meta[:,idx].tolist(),'series_count':len(self.meta),
-                'schema':self.schema,
+                'schema':self.schema,'periodicity':self.periodicity,'period_months':self.period_months,
                 'metric_labels':METRICS,'units':{'volume_kg':self.volume_unit,'value_1000_toman':self.value_unit}}
 
-def baseline(hist,method,horizon):
+def baseline(hist,method,horizon,season_length=12):
     if hist.ndim==1:hist=hist[None,:]
     if method=='Last month':return hist[:,-1]
     if method.startswith('Mean '):
@@ -255,8 +280,8 @@ def baseline(hist,method,horizon):
         last=hist[:,-1];delta=np.clip((recent-previous)*horizon/3,-.15*last*horizon,.15*last*horizon)
         return np.maximum(last+delta,0)
     if method=='Seasonal naive':
-        if hist.shape[1]<12:raise ValueError('برای الگوی فصل مشابه، دوازده ماه داده لازم است.')
-        return hist[:,-12+horizon-1]
+        if hist.shape[1]<season_length:raise ValueError('برای مقایسه فصلی، یک سال داده لازم است.')
+        return hist[:,-season_length+horizon-1]
     raise ValueError('روش پیش‌بینی معتبر نیست.')
 
 def choose_method(dataset,metric,cutoff,window,horizon):
@@ -287,7 +312,7 @@ def choose_method(dataset,metric,cutoff,window,horizon):
         truth=y[:,o+horizon]
         actual+=truth.sum()
         for method in candidates:
-            try:pred=baseline(hist,method,horizon)
+            try:pred=baseline(hist,method,horizon,12//dataset.period_months)
             except ValueError:continue
             errors[method]+=np.abs(pred-truth).sum()
     scored={m:e/actual for m,e in errors.items() if actual>0}
@@ -303,13 +328,15 @@ def predict(dataset,request):
     if origin<1:raise ValueError('دست‌کم دو ماه ورودی لازم است.')
     horizon=int(request.get('horizon',1))
     if not 1<=horizon<=3:raise ValueError('افق پیش‌بینی باید بین یک تا سه ماه باشد.')
-    expected=str(pd.Period(cutoff,freq='M')+horizon)
+    expected=str(pd.Period(cutoff,freq='M')+horizon*dataset.period_months)
     if target and target!=expected:raise ValueError('ماه مقصد با افق انتخاب‌شده سازگار نیست.')
     window=request.get('window','all')
     if window=='all':window=origin+1
     else:window=int(window)
     if window<2 or window>origin+1:raise ValueError('طول تاریخچه معتبر نیست.')
     filters=request.get('filters',{})
+    dataset=dataset.for_market(filters.get('Market'))
+    y=dataset.metric(metric)
     mask=dataset.mask(filters)
     if not mask.any():raise ValueError('برای ترکیب انتخاب‌شده هیچ ردیفی در مستر وجود ندارد.')
     method=request.get('method','auto')
@@ -319,7 +346,7 @@ def predict(dataset,request):
     hist=y[mask,max(0,origin-window+1):origin+1]
     # Forecast exact city/taxonomy cells, then add; this preserves the same
     # evaluation grain used in the historical study.
-    prediction=float(baseline(hist,method,horizon).sum())
+    prediction=float(baseline(hist,method,horizon,12//dataset.period_months).sum())
     actual=float(y[mask,origin+horizon].sum()) if origin+horizon<len(dataset.months) else None
     history=[{'month':dataset.months[j],'value':float(y[mask,j].sum())} for j in range(max(0,origin-window+1),origin+1)]
     sub=y[mask]
@@ -327,7 +354,7 @@ def predict(dataset,request):
     review_error=0.;review_actual=0.;review_count=0
     for o in review_origins:
         truth=float(sub[:,o+horizon].sum())
-        guess=float(baseline(sub[:,o-window+1:o+1],method,horizon).sum())
+        guess=float(baseline(sub[:,o-window+1:o+1],method,horizon,12//dataset.period_months).sum())
         review_error+=abs(guess-truth);review_actual+=truth;review_count+=1
     selection_wape=review_error/review_actual if review_actual>0 else None
     return {'source':dataset.source,'metric':metric,'unit':dataset.volume_unit if metric=='volume_kg' else dataset.value_unit,
