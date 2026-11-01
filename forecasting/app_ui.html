@@ -390,7 +390,23 @@ function setData(next,initial=false){
     initial?'داده نمونه آماده است؛ برای ادامه، روی «بررسی ستون‌ها» بزنید.':
     'فایل با موفقیت خوانده شد. برای بررسی ستون‌ها روی «ادامه» بزنید.','success');
 }
-async function post(url,body,binary=false,mapping=null){let headers=binary?{'X-Filename':encodeURIComponent(body.name)}:{'Content-Type':'application/json'};if(binary&&mapping)headers['X-Mapping']=encodeURIComponent(JSON.stringify(mapping));let opts={method:'POST',body:binary?body:JSON.stringify(body),headers};let res=await fetch(url,opts);let json=await res.json();if(res.status===422&&json.mapping_required)return json;if(!res.ok)throw Error(json.error||'خطا در پردازش');return json}
+async function post(url,body,binary=false,mapping=null){
+  const headers=binary?{'X-Filename':encodeURIComponent(body.name)}:{'Content-Type':'application/json'};
+  if(binary&&mapping)headers['X-Mapping']=encodeURIComponent(JSON.stringify(mapping));
+  let res;
+  try{res=await fetch(url,{method:'POST',body:binary?body:JSON.stringify(body),headers})}
+  catch(e){throw Error('ارتباط با سرویس برقرار نشد. برنامه Python را اجرا و صفحه را دوباره باز کنید.')}
+  let json;
+  try{json=await res.json()}catch(e){throw Error('پاسخ سرور قابل خواندن نیست. وضعیت ترمینال اجرای برنامه را بررسی کنید.')}
+  if(res.status===422&&json.mapping_required)return json;
+  if(!res.ok){
+    const message=json.error||'سرور نتوانست درخواست را پردازش کند.';
+    if(String(message).includes('مسیر فایل xlsx معتبر نیست'))
+      throw Error('فایل در مسیر واردشده پیدا نشد یا پسوند آن .xlsx نیست؛ مسیر کامل فایل را روی همین رایانه بررسی کنید.');
+    throw Error(message);
+  }
+  return json;
+}
 function showMapping(info,required=false){
   schemaNeedsReview=true;
   if(required){
@@ -463,7 +479,7 @@ async function operation(msg,fn,source=null){
     else setData(result);
   }catch(e){
     recheckingMapping=false;
-    status('خواندن فایل انجام نشد: '+e.message,true);
+    status('خواندن فایل انجام نشد: '+e.message+(data?' فایل قبلی همچنان فعال است.':''),true);
   }finally{lockButtons(false)}
 }
 function setUpload(file,auto=false){
