@@ -2,7 +2,7 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, unquote
-import json, threading, uuid
+import json, threading, uuid, time
 from app_core import Dataset, predict, ROOT
 from schema import SchemaError
 
@@ -59,7 +59,19 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     dataset=Dataset.file(dest,mapping);dataset.source=name
                 finally:
-                    dest.unlink(missing_ok=True)
+                    # Antivirus/indexers on Windows may hold uploaded XLSX files briefly.
+                    # Do not allow a transient cleanup lock to discard a parsed dataset.
+                    for attempt in range(6):
+                        try:
+                            dest.unlink(missing_ok=True)
+                            break
+                        except PermissionError:
+                            if attempt == 5:
+                                raise PermissionError(
+                                    'فایل موقت آپلود هنوز توسط ویندوز یا برنامه دیگری قفل است. '
+                                    'فایل اصلی را در قسمت «مسیر فایل روی همین رایانه» وارد و «خواندن» را بزنید.'
+                                )
+                            time.sleep(0.3 * (attempt + 1))
                 with lock:state['dataset']=dataset
                 self.answer(dataset.options());return
             body=json.loads(self.rfile.read(n))
