@@ -36,6 +36,21 @@ class SharedSelectionTests(unittest.TestCase):
                 self.assertEqual({r['horizon'] for r in rows},{1,2,3})
                 for h in [1,2,3]:
                     selected=policy[str(h)]
+                    evidence=selected['selection_evidence']
+                    self.assertEqual(evidence['selected'],selected['name'])
+                    self.assertEqual(evidence['scope'],'all_series')
+                    self.assertEqual(evidence['horizon'],h)
+                    self.assertEqual(evidence['grain'],'city_segment')
+                    self.assertEqual(len(evidence['origin_details']),len(origins))
+                    self.assertEqual({x['target'] for x in evidence['origin_details']},
+                                     {d.months[o+h] for o in origins})
+                    self.assertTrue(all(x['wape']==0 for x in evidence['origin_details']))
+                    self.assertTrue(all(x['absolute_error']==0 for x in evidence['origin_details']))
+                    self.assertTrue(any(x['name'].startswith('ml|')
+                                        for x in evidence['candidate_scores']))
+                    self.assertTrue(any(len(x['components'])==2
+                                        for x in evidence['candidate_scores']))
+                    self.assertEqual(evidence['candidate_scores'][0]['wape'],0)
                     self.assertEqual(selected['validation_wape'],0)
                     self.assertEqual(selected['validation_origins'],[self.months[o] for o in origins])
                     self.assertEqual(selected['comparison_grain'],'city_segment')
@@ -55,6 +70,35 @@ class SharedSelectionTests(unittest.TestCase):
                 self.assertEqual(original.keys(),altered.keys())
                 for key in original:
                     np.testing.assert_array_equal(original[key],altered[key])
+
+    def test_selection_diagnostics_match_global_policy_for_filtered_requests(self):
+        import tempfile
+        from pathlib import Path
+        d=self.dataset
+        with tempfile.TemporaryDirectory() as cache:
+            with patch.object(engine,'OUT',Path(cache)), patch.object(engine,'fit_models',self.bad_ml):
+                all_series=engine.future_request(d,{'metric':'volume_kg','horizon':1,'filters':{}})
+                brand_a=engine.future_request(d,{'metric':'volume_kg','horizon':1,
+                                                 'filters':{'Brand':'A'}})
+                brand_b=engine.future_request(d,{'metric':'volume_kg','horizon':1,
+                                                 'filters':{'Brand':'B'}})
+        for result in [all_series,brand_a,brand_b]:
+            evidence=result['selection_evidence']
+            self.assertEqual(evidence['selected'],result['calibration']['name'])
+            self.assertEqual(evidence['scope'],'all_series')
+            self.assertAlmostEqual(evidence['candidate_scores'][0]['wape'],0)
+            self.assertEqual(len(evidence['origin_details']),2)
+            self.assertEqual(evidence['horizon'],1)
+        self.assertEqual(all_series['selection_evidence'],brand_a['selection_evidence'])
+        self.assertEqual(brand_a['selection_evidence'],brand_b['selection_evidence'])
+        self.assertNotEqual(brand_a['prediction'],brand_b['prediction'])
+
+    def test_short_history_has_no_fake_comparison(self):
+        d=self.dataset
+        short=Dataset(d.meta,d.volume[:,:12],d.value[:,:12],d.months[:12],d.source)
+        result=engine.future_request(short,{'metric':'volume_kg','horizon':1})
+        self.assertIsNone(result['selection_evidence'])
+        self.assertIsNone(result['calibration']['validation_wape'])
 
     def test_unobserved_validation_target_rejected(self):
         with patch.object(engine,'fit_models',self.bad_ml):
