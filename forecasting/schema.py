@@ -11,7 +11,7 @@ FIELDS=['Market','City','Company','Brand','SubBrand','Subcategory','Subcategory2
 REQUIRED=['City','Brand','Measure']
 ALIASES={
     'Market':['Market','Market Type','Market Level','نوع بازار','سطح بازار'],
-    'City':['City/Region/Dis. Channel','City/Region/Dis.Channel','City','City Name','Town','شهر','نام شهر','شهر منطقه کانال'],
+    'City':['City/Region/Dis. Channel','City/Region/Dis.Channel','Location&Channel','Location & Channel','Location/Channel','City','City Name','Town','شهر','نام شهر','شهر منطقه کانال'],
     'Company':['Company','Company Name','Manufacturer','Producer','کمپانی','شرکت','تولیدکننده'],
     'Brand':['Brand','Brand Name','نام برند','برند'],
     'SubBrand':['SubBrand','Sub Brand','Sub-brand','Subbrand Name','زیر برند','زیر‌برند','ساب برند'],
@@ -19,7 +19,7 @@ ALIASES={
     'Subcategory2':['Subcategory 2','Sub Category 2','Subcategory2','ساب کتگوری 2','زیر دسته 2'],
     'Subcategory3':['Subcategory 3','Sub Category 3','Subcategory3','ساب کتگوری 3','زیر دسته 3'],
     'Subcategory4':['Subcategory 4','Sub Category 4','Subcategory4','ساب کتگوری 4','زیر دسته 4'],
-    'Measure':['Measure','Metric','Measure Type','Sales Measure','Sales Metric','Indicator','شاخص','شاخص فروش','نوع شاخص','سنجه'],
+    'Measure':['Measure','Index Name','IndexName','Metric','Measure Type','Sales Measure','Sales Metric','Indicator','شاخص','شاخص فروش','نوع شاخص','سنجه'],
 }
 MONTHS={'jan':1,'january':1,'feb':2,'february':2,'mar':3,'march':3,'apr':4,'april':4,
         'may':5,'jun':6,'june':6,'jul':7,'july':7,'aug':8,'august':8,'sep':9,'sept':9,
@@ -80,6 +80,31 @@ def resolve_fields(head,manual=None):
             _,idx=candidates[0];result[field]=idx;used.add(idx);confidence[field]='near match'
     return result,confidence
 
+def detect_layout(head, mapping=None):
+    """Locate the measure boundary and keep ALL pre-measure category columns.
+
+    Dates are monthly columns strictly after Measure / Index Name. Annual totals
+    or numeric identifiers are not treated as monthly forecasting observations.
+    """
+    mapping = mapping or {}
+    fields, confidence = resolve_fields(head, mapping.get('fields', {}))
+    measure_col = fields.get('Measure')
+    if measure_col is None:
+        return fields, confidence, [], {}, []
+    dates = {i: m for i, m in months_in_header(head).items() if i > measure_col}
+    before = [i for i in sorted(head) if i < measure_col and str(head[i]).strip()]
+    selected = mapping.get('dimension_columns')
+    if selected is not None:
+        selected_normal = {normalized(h) for h in selected}
+        before = [i for i in before if normalized(head[i]) in selected_normal]
+    # Market identifies the geographic level, but isn't a disjoint City series
+    # dimension. The city-level records are filtered in parse_master().
+    categories = [i for i in before if i != fields.get('Market')]
+    return fields, confidence, categories, dates, [
+        str(head[i]) for i in sorted(head) if i > measure_col and i not in dates
+    ]
+
+
 def metric_kind(value,manual=None):
     raw=str(value or '').strip()
     if manual:
@@ -109,8 +134,17 @@ def metric_unit(kind,label,override=None):
     if any(x in s for x in ['rial','ریال']):return 'ریال'
     return 'واحد مبلغ فایل'
 
-def mapping_prompt(sheet,head,detected,examples=None):
+def mapping_prompt(sheet,head,detected,examples=None,category_columns=None,dates=None):
+    boundary = detected.get('Measure')
+    candidates = [str(head[i]) for i in sorted(head)
+                  if boundary is not None and i < boundary and i != detected.get('Market')
+                  and str(head[i]).strip()]
+    selected = [str(head[i]) for i in category_columns] if category_columns is not None else candidates
     return {'mapping_required':True,'sheet':sheet,
+            'measure_column':str(head[boundary]) if boundary is not None else None,
+            'dimension_candidates':candidates,'dimension_columns':selected,
+            'date_columns':[str(head[i]) for i in sorted(dates or {})],
+
             'headers':[str(v) for _,v in sorted(head.items()) if str(v).strip() and month(v) is None],
             'suggested':{field:str(head[idx]) for field,idx in detected.items()},
             'required':REQUIRED,'fields':FIELDS,
