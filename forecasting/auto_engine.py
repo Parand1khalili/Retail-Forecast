@@ -20,7 +20,7 @@ PARAMS=dict(iterations=180,depth=5,learning_rate=.06,l2_leaf_reg=10,
             allow_writing_files=False,has_time=True,one_hot_max_size=32)
 VERSION='global-v2-dynamic-dimensions'
 SELECTION_VERSION='robust-price-volume-v3'
-POLICY_VERSION='shared-origin-city-segment-v2-dynamic-dimensions'
+POLICY_VERSION='shared-origin-city-segment-v3-selection-evidence'
 
 def emit(*args):print(*args,flush=True)
 
@@ -225,14 +225,36 @@ def select_recipes(d,metric,origins,by_origin):
                 blend=f'blend|{name}|{weight}'
                 pp[blend]=weight*pp[name]+(1-weight)*pp[bestbase]
                 recipes[blend]={'components':[[name,weight],[bestbase,1-weight]]}
+        candidate_scores=[]
         for name,pred in pp.items():
-            validation.append({'metric':metric,'horizon':h,'model':name,**scores(actual,pred)})
+            row={'metric':metric,'horizon':h,'model':name,**scores(actual,pred)}
+            validation.append(row)
+            candidate_scores.append({'name':name,'wape':row['wape'],'bias':row['bias']})
+        # The selection denominator is identical for every candidate, so
+        # minimizing city-cell absolute error is equivalent to pooled WAPE.
+        ranked=sorted(candidate_scores,key=lambda row:(float('inf') if row['wape'] is None
+                                                        else row['wape'],row['name']))
         winner=min(pp,key=lambda name:np.abs(pp[name]-actual).sum())
+        by_month=[]
+        for o in origins:
+            observed=group(truth[:,o+h:o+h+1],d.meta,'city_segment')
+            pieces=recipes[winner]['components']
+            predicted=sum(weight*group(by_origin[o][name][:,h-1:h],d.meta,'city_segment')
+                          for name,weight in pieces)
+            detail=scores(observed,predicted)
+            by_month.append({'origin':d.months[o],'target':d.months[o+h],
+                             'actual':float(observed.sum()),'predicted':float(predicted.sum()),
+                             'wape':detail['wape'],'absolute_error':float(np.abs(observed-predicted).sum())})
         policy[str(h)]={**recipes[winner],'name':winner,
                         'validation_wape':scores(actual,pp[winner])['wape'],
                         'validation_origins':[d.months[o] for o in origins],
                         'comparison_grain':'city_segment',
-                        'comparison_metric':'pooled WAPE'}
+                        'comparison_metric':'pooled WAPE',
+                        'selection_evidence':{
+                            'metric':'pooled WAPE','grain':'city_segment',
+                            'scope':'all_series','horizon':h,'selected':winner,
+                            'candidate_scores':ranked,'origin_details':by_month
+                        }}
     return policy,validation
 
 def study():
@@ -332,6 +354,7 @@ def future_request(d,request):
             'calibration':recipe,'prediction':float(cells[mask].sum()),'actual_if_known':None,
             'absolute_error_if_known':None,'rows':int(mask.sum()),'history':history,'filters':request.get('filters',{}),
             'selected_series_check':{'origins':0,'wape':None},'benchmark':benchmark,'selected_benchmark':selected_benchmark,
+            'selection_evidence':recipe.get('selection_evidence'),
             'note':('تاریخچه برای آموزش مدل کامل کوتاه است و برآورد پایه ارائه شده است. ' if len(d.months)<18 else 'روش و طول تاریخچه با آزمون ماه‌های گذشته انتخاب و مدل با داده‌های موجود آموزش داده شد. ')+
                    'ماه مقصد در فایل ورودی وجود ندارد. عدد خطای مرجع، بازآزماییِ مراحل توسعه است و تأیید مستقل آینده محسوب نمی‌شود. خطای آزمون، تضمین خطای ماه آینده یا تک‌محصول نیست.'}
 
