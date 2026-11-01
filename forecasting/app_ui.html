@@ -121,7 +121,9 @@ function renderSchemaPreview(schema){
   for(const name of schema.dimension_columns){const tag=document.createElement('span');tag.textContent=name;tagbox.append(tag)}
   preview.append(tagbox);
   const cap=document.createElement('div');cap.className='schema-caption';
-  cap.textContent='شاخص: '+(schema.measure_column||'نامشخص')+' · '+(schema.date_columns||[]).length+' ستون ماهانه. اگر دسته‌ها درست نیستند، «اصلاح دستی ستون‌ها» را بزنید.';
+  const dates=schema.date_columns||[];
+  const range=dates.length?(dates[0]+' تا '+dates[dates.length-1]):'شناسایی نشده';
+  cap.textContent='مرز داده: '+(schema.measure_column||'نامشخص')+' · '+dates.length+' ستون ماهانه ('+range+'). برای تغییر دسته‌ها، «اصلاح دستی ستون‌ها» را بزنید.';
   preview.append(cap);
 }
 function setData(next){data=next;dimNames=Array.isArray(next.dimensions)&&next.dimensions.length?next.dimensions:[...defaultDimNames];
@@ -129,6 +131,11 @@ function setData(next){data=next;dimNames=Array.isArray(next.dimensions)&&next.d
   makeFilters();renderSchemaPreview(next.schema);el('mappingPanel').hidden=true;el('run').disabled=false;el('source').textContent=next.source+' · '+next.months[0]+' تا '+next.months.at(-1)+' · '+persian(next.series_count)+' ردیف شهری';el('metric').options[0].textContent='فروش حجمی، '+next.units.volume_kg;el('metric').options[1].textContent='فروش ریالی، '+next.units.value_1000_toman;refreshFilters();refreshMonths();status('داده آماده است.');el('main').innerHTML='<div class="empty"><div class="empty-visual">✓</div><strong>داده آماده است</strong><p>فیلترها و ماه مقصد را انتخاب کنید و پیش‌بینی را محاسبه کنید.</p></div>'}
 async function post(url,body,binary=false,mapping=null){let headers=binary?{'X-Filename':encodeURIComponent(body.name)}:{'Content-Type':'application/json'};if(binary&&mapping)headers['X-Mapping']=encodeURIComponent(JSON.stringify(mapping));let opts={method:'POST',body:binary?body:JSON.stringify(body),headers};let res=await fetch(url,opts);let json=await res.json();if(res.status===422&&json.mapping_required)return json;if(!res.ok)throw Error(json.error||'خطا در پردازش');return json}
 function showMapping(info){let box=el('mappingPanel');box.replaceChildren();box.hidden=false;let title=document.createElement('h3');title.textContent='نگاشت سرتیترها: '+info.sheet;box.append(title);let intro=document.createElement('p');intro.className='help';intro.textContent=info.message;box.append(intro);let names={Market:'نوع بازار (اختیاری)',City:'شهر/محل',Company:'کمپانی',Brand:'برند',SubBrand:'زیر‌برند',Subcategory:'ساب‌کتگوری ۱',Subcategory2:'ساب‌کتگوری ۲',Subcategory3:'ساب‌کتگوری ۳',Subcategory4:'ساب‌کتگوری ۴',Measure:'ستون شاخص فروش'};for(const field of info.fields){let wrap=document.createElement('div');wrap.className='field';let label=document.createElement('label');label.textContent=names[field]+(info.required.includes(field)?' *':'');let sel=document.createElement('select');sel.id='map_'+field;choice(sel,[['','انتخاب نشده'],...info.headers.map(x=>[x,x])],info.suggested[field]||'');wrap.append(label,sel);box.append(wrap)}let examples=document.createElement('p');examples.className='help';examples.textContent=info.measure_examples.length?'نمونهٔ نام شاخص‌ها: '+info.measure_examples.join('، '):'نام ردیف‌های حجم و مبلغ را مطابق فایل وارد کنید.';box.append(examples);
+if(Array.isArray(info.date_columns)&&info.date_columns.length){
+  const dates=document.createElement('p');dates.className='help';
+  dates.textContent='ستون‌های تاریخ شناسایی‌شده: '+info.date_columns[0]+' تا '+info.date_columns[info.date_columns.length-1]+' ('+info.date_columns.length+' ماه)';
+  box.append(dates);
+}
 if(Array.isArray(info.dimension_candidates)&&info.dimension_candidates.length){
   const group=document.createElement('div');group.className='map-dims';
   const heading=document.createElement('div');heading.className='map-dims-title';
