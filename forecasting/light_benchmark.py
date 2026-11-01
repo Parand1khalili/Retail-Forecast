@@ -16,11 +16,12 @@ from app_core import Dataset, ROOT
 VERSION = 'light-monthly-v1'
 
 
-def candidates(volume, value, metric, horizon):
+def candidates(volume, value, metric, horizon, season_length=12):
     y = volume if metric == 'volume_kg' else value
     last = y[:, -1]
     out = {'last': last, 'mean2': y[:, -2:].mean(1),
-           'mean3': y[:, -3:].mean(1), 'seasonal12': y[:, -12+horizon-1]}
+           'mean3': y[:, -3:].mean(1),
+           f'seasonal{season_length}': y[:, -season_length+horizon-1]}
     for alpha in [.2, .5, .8]:
         level = y[:, 0].copy()
         for j in range(1, y.shape[1]):
