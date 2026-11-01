@@ -293,11 +293,13 @@ function showStage(step,force=false){
   if(step>0&&!data&&!(step===1&&schemaNeedsReview))return false;
   if(step>1&&schemaNeedsReview)return false;
   if(step===4&&!resultReady)return false;
+  const previous=activeStage;
   activeStage=step;maxStage=Math.max(maxStage,step);
   document.querySelectorAll('[data-panel]').forEach(panel=>{
     panel.hidden=Number(panel.dataset.panel)!==step;
   });
   updateWizard();
+  if(previous!==step)document.querySelector?.('.wizard-layout')?.scrollIntoView({block:'start',behavior:'smooth'});
   return true;
 }
 function invalidateResult(){
@@ -359,6 +361,10 @@ function setData(next,initial=false){
 async function post(url,body,binary=false,mapping=null){let headers=binary?{'X-Filename':encodeURIComponent(body.name)}:{'Content-Type':'application/json'};if(binary&&mapping)headers['X-Mapping']=encodeURIComponent(JSON.stringify(mapping));let opts={method:'POST',body:binary?body:JSON.stringify(body),headers};let res=await fetch(url,opts);let json=await res.json();if(res.status===422&&json.mapping_required)return json;if(!res.ok)throw Error(json.error||'خطا در پردازش');return json}
 function showMapping(info,required=false){
   schemaNeedsReview=true;
+  if(required){
+    el('schemaPreview').hidden=true;
+    el('schemaSource').textContent='این فایل به تأیید دستی ساختار نیاز دارد: '+(pendingSource==='upload'?(selectedUpload?.name||'فایل انتخاب‌شده'):'فایل با مسیر محلی');
+  }
   let box=el('mappingPanel');box.replaceChildren();box.hidden=false;let title=document.createElement('h3');title.textContent='نگاشت سرتیترها: '+info.sheet;box.append(title);let intro=document.createElement('p');intro.className='help';intro.textContent=info.message;box.append(intro);let names={Market:'نوع بازار (اختیاری)',City:'شهر/محل',Company:'کمپانی',Brand:'برند',SubBrand:'زیر‌برند',Subcategory:'ساب‌کتگوری ۱',Subcategory2:'ساب‌کتگوری ۲',Subcategory3:'ساب‌کتگوری ۳',Subcategory4:'ساب‌کتگوری ۴',Measure:'ستون شاخص فروش'};for(const field of info.fields){let wrap=document.createElement('div');wrap.className='field';let label=document.createElement('label');label.textContent=names[field]+(info.required.includes(field)?' *':'');let sel=document.createElement('select');sel.id='map_'+field;choice(sel,[['','انتخاب نشده'],...info.headers.map(x=>[x,x])],info.suggested[field]||'');wrap.append(label,sel);box.append(wrap)}let examples=document.createElement('p');examples.className='help';examples.textContent=info.measure_examples.length?'نمونهٔ نام شاخص‌ها: '+info.measure_examples.join('، '):'نام ردیف‌های حجم و مبلغ را مطابق فایل وارد کنید.';box.append(examples);
 if(Array.isArray(info.date_columns)&&info.date_columns.length){
   const dates=document.createElement('p');dates.className='help';
