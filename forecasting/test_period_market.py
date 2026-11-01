@@ -123,6 +123,7 @@ class SourceFrequencyTests(unittest.TestCase):
         f=Features(d,'volume_kg',0,19)
         features,_,_=f.features(5,1)
         self.assertEqual(features['target_month'].iloc[0],2)
+        self.assertEqual(features['target_days'].iloc[0],60)  # Jan–Feb 2024, leap year
         self.assertEqual(features['target_month_previous_year'].iloc[0],1)
         self.assertIn('Market',features.columns)
 
