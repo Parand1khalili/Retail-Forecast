@@ -59,12 +59,14 @@ class UploadServerTests(unittest.TestCase):
         with patch.object(self.app.Dataset, "file", side_effect=parse):
             status, result = self.request(
                 "POST", "/api/upload", body=b"synthetic-xlsx-body",
-                headers={"Content-Length": "19", "X-Filename": "Water%20June.xlsx"},
+                headers={"Content-Length": "19", "X-Filename": "Water%20June.xlsx",
+                         "X-Periodicity": "bimonthly"},
             )
 
         self.assertEqual(status, 200)
         self.assertEqual(result["source"], "Water June.xlsx")
         self.assertEqual(seen[0][1], b"synthetic-xlsx-body")
+        self.assertEqual(seen[0][2]["periodicity"], "bimonthly")
         self.assertFalse(seen[0][0].exists())
 
     def test_cleanup_retries_windows_file_lock(self):
@@ -92,7 +94,7 @@ class UploadServerTests(unittest.TestCase):
                 return {"source": self.source, "months": ["2026-05", "2026-06"]}
 
         with patch.object(self.app.Dataset, "file", return_value=Imported()) as parse:
-            body = json.dumps({"path": f'  "{path}"  '}).encode()
+            body = json.dumps({"path": f'  "{path}"  ', "periodicity": "bimonthly"}).encode()
             status, response = self.request(
                 "POST", "/api/load", body=body,
                 headers={"Content-Type": "application/json"},
@@ -100,6 +102,7 @@ class UploadServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(response["source"], "master.xlsx")
         parse.assert_called_once()
+        self.assertEqual(parse.call_args.args[1]['periodicity'], 'bimonthly')
 
 
 if __name__ == "__main__":
