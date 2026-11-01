@@ -255,6 +255,7 @@ class Dataset:
     def options(self):
         dims=self.all_dimensions()
         visible=(self.schema or {}).get('shown_dimensions') or dims
+        if 'Market' in visible:visible=['Market']+[name for name in visible if name!='Market']
         idx=[dims.index(d) for d in visible]
         return {'source':self.source,'months':self.months,'dimensions':visible,
                 'rows':self.meta[:,idx].tolist(),'series_count':len(self.meta),
