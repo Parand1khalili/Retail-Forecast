@@ -38,6 +38,32 @@ class UploadServerTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_full_export_download_and_missing_dataset(self):
+        connection = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=5)
+        try:
+            connection.request('GET', '/api/export/full')
+            response = connection.getresponse()
+            self.assertEqual(response.status, 400)
+            self.assertIn('error', json.loads(response.read()))
+        finally:
+            connection.close()
+        import full_export
+        self.app.state['dataset'] = object()
+        def fake_export(dataset, destination):
+            self.assertIs(dataset, self.app.state['dataset'])
+            destination.write_bytes(b'test-xlsx-bytes')
+        with patch.object(full_export, 'export_workbook', side_effect=fake_export):
+            connection = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=5)
+            try:
+                connection.request('GET', '/api/export/full')
+                response = connection.getresponse()
+                self.assertEqual(response.status, 200)
+                self.assertIn('spreadsheetml.sheet', response.getheader('Content-Type'))
+                self.assertIn('attachment', response.getheader('Content-Disposition'))
+                self.assertEqual(response.read(), b'test-xlsx-bytes')
+            finally:
+                connection.close()
+
     def test_no_sample_still_allows_uploading(self):
         status, body = self.request("GET", "/api/data")
         self.assertEqual(status, 200)
