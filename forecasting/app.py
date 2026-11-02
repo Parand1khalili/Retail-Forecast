@@ -60,6 +60,31 @@ class Handler(BaseHTTPRequestHandler):
         path=urlparse(self.path).path
         if path=='/api/health':
             self.answer({'service':'ra-forecast','ready':True,'runtime':RUNTIME});return
+        if path=='/api/export/full':
+            import tempfile
+            from full_export import export_workbook
+            with lock: dataset=state['dataset']
+            if dataset is None:
+                self.answer({'error':'ابتدا فایل مستر را بارگذاری کنید.'},400);return
+            try:
+                # Build completely before sending headers; a failed model must
+                # never be returned as a corrupt or partially written XLSX.
+                with training_lock:
+                    with tempfile.TemporaryDirectory(prefix='emrc_export_') as folder:
+                        workbook=Path(folder)/'retail_forecast_full.xlsx'
+                        export_workbook(dataset,workbook)
+                        self.send_response(200)
+                        self.send_header('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                        self.send_header('Content-Disposition','attachment; filename="retail_forecast_full.xlsx"')
+                        self.send_header('Content-Length',str(workbook.stat().st_size))
+                        self.send_header('Cache-Control','no-store')
+                        self.end_headers()
+                        with workbook.open('rb') as stream:
+                            for chunk in iter(lambda:stream.read(1024*1024),b''):
+                                self.wfile.write(chunk)
+            except Exception as e:
+                self.answer({'error':str(e)},400)
+            return
         if path=='/api/data':
             with lock:dataset=state['dataset']
             self.answer(dataset.options() if dataset is not None else {
