@@ -43,3 +43,17 @@
 اگر پروژه را به رایانهٔ دیگری منتقل کردید، با پایتون ۳٫۱۲ یا جدیدتر `pip install -r forecasting/requirements.txt` را اجرا کنید و سپس `python forecasting/app.py` را بزنید.
 
 آزمون جدید مدل‌های خودکار در `outputs/automatic_models/` ذخیره می‌شود. هدف دقت ۹۰٪ در این پروژه به معنای WAPE حداکثر ۱۰٪ است؛ این معیار میانگین وزنی خطای مجموعهٔ ترکیب‌های شهر/محصول است و دقت ۹۰٪ برای تک‌تک کالاها یا ماه‌های آینده را تضمین نمی‌کند. آزمون قبلیِ طول تاریخچه و محدودیت‌های داده در `outputs/yoghurt_history_study/REPORT_FA.md` باقی مانده است.
+
+## ارزیابی مستقل Forecast در برابر Actual واقعی
+
+اگر خروجی `retail_forecast_full.xlsx` شامل Sheetهای `Volume` و `Value` است، شیت سوم را به **مستر اصلی فروش Actual با ستون Measure** و دوره هدف، مثلاً `Jul-Aug 2026`، اختصاص بدهید. برای کنترل بدون دستکاری فایل ورودی:
+
+```powershell
+python forecasting/evaluate_actuals.py "retail_forecast_full.xlsx" --output "outputs/forecast_validation"
+```
+
+خروجی‌های محلی: `reconciliation.json` برای تطبیق کلید ردیف‌ها و مقادیر تاریخی؛ `scorecard.csv` برای WAPE، Bias، MAE و RMSE تفکیک‌شده بر اساس Market Level؛ `row_errors.csv` برای ردیف‌ها؛ `baseline.csv` برای مقایسه Last Period و Seasonal Naive؛ `market_shares.csv` و `mat_shares.csv` برای سهم حجمی/ریالی در سطح دسته، برند، شهر، اندازه و بسته‌بندی؛ `time_series.csv` و `demand_segments.csv` برای تاریخچه و فروش‌های پراکنده.
+
+**تعاریف:** WAPE بر اساس جمع خطای مطلق در سطح سری و Bias بر اساس تفاوت مجموع پیش‌بینی و Actual است. `MAT` برای فایل دوماهه شش دوره متوالی و برای فایل ماهانه دوازده دوره است. هر `Market` مستقل ارزیابی می‌شود؛ جمع `All` و `City` باعث دوباره‌شماری می‌شود. برای فروش واقعی صفر، APE ردیفی تعریف نشده؛ این ابزار از ساخت صفر مصنوعی پرهیز می‌کند.
+
+**هشدار امنیت داده:** فایل‌های اصلی، خروجی‌های ارزیابی، CSVهای ردیف محصول و گزارش‌های حاوی داده Retail Audit خصوصی هستند و نباید در Git Commit شوند. فقط کد عمومی و تست‌های مصنوعی در Git نگهداری شوند. این ابزار ارزیابی یک دوره Actual است؛ جایگزین Rolling Backtest چنددوره‌ای نیست.
