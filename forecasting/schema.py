@@ -16,8 +16,8 @@ ALIASES={
     'Brand':['Brand','Brand Name','نام برند','برند'],
     'SubBrand':['SubBrand','Sub Brand','Sub-brand','Subbrand Name','زیر برند','زیر‌برند','ساب برند'],
     'Subcategory':['Subcategory','Subcategory 1','Sub Category','Sub Category 1','Category','Category 1','ساب کتگوری','ساب‌کتگوری','دسته فرعی','زیر دسته'],
-    'Subcategory2':['Subcategory 2','Sub Category 2','Subcategory2','ساب کتگوری 2','زیر دسته 2'],
-    'Subcategory3':['Subcategory 3','Sub Category 3','Subcategory3','ساب کتگوری 3','زیر دسته 3'],
+    'Subcategory2':['Subcategory 2','Sub Category 2','Subcategory2','Sub Brand Sub Category2','ساب کتگوری 2','زیر دسته 2'],
+    'Subcategory3':['Subcategory 3','Sub Category 3','Subcategory3','Sub Brand Sub Category3','ساب کتگوری 3','زیر دسته 3'],
     'Subcategory4':['Subcategory 4','Sub Category 4','Subcategory4','ساب کتگوری 4','زیر دسته 4'],
     'Measure':['Measure','Index Name','IndexName','Metric','Measure Type','Sales Measure','Sales Metric','Indicator','شاخص','شاخص فروش','نوع شاخص','سنجه'],
 }
