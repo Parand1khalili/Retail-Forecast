@@ -225,3 +225,29 @@ def holdout_comparison(dataset, metric, holdout_origin, candidates_at_holdout,
                 global_stats['absolute_error'] if global_stats['absolute_error'] > 0 else None),
             'series_using_override': sum(r is not global_recipe for r in recipes)}
     return result
+
+
+def filtered_holdout_summary(dataset, metric, mask, horizon, holdout_origin,
+                             at_origin, global_recipe, hierarchy):
+    """Evaluate the current selection only on untouched historical targets.
+
+    A zero actual denominator produces WAPE=None, never a misleading 0%.
+    The selection policy is fixed before this function examines holdout actuals.
+    """
+    if holdout_origin + horizon >= len(dataset.months):
+        return None
+    required={component for recipe in [global_recipe]+hierarchy['overrides'].get(str(horizon), [])
+              for component,_ in recipe['components']}
+    if not required.issubset(at_origin):
+        return None
+    selected=np.asarray(mask,dtype=bool)
+    if not selected.any():
+        return None
+    proposed,_,_=forecast_with_recipes(dataset,horizon,at_origin,global_recipe,hierarchy)
+    baseline,_,_=forecast_with_recipes(dataset,horizon,at_origin,global_recipe,hierarchy,'global')
+    actual=dataset.metric(metric)[:,holdout_origin+horizon][selected]
+    return {'origin':dataset.months[holdout_origin],
+            'target':dataset.months[holdout_origin+horizon],
+            'series':int(selected.sum()),'independent':True,
+            'global':_stats(actual,baseline[selected]),
+            'hierarchical':_stats(actual,proposed[selected])}
