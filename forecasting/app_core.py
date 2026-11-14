@@ -221,6 +221,26 @@ class Dataset:
                        self.months,self.source,self.volume_unit,self.value_unit,
                        self.dimension_names,self.schema,self.periodicity)
 
+    def for_grain(self, grain=None):
+        """Keep summary rows and SKU rows in independent forecast populations.
+
+        A source may contain overlapping Product/Company/SKU reporting records.
+        Their levels must never be summed or trained together accidentally.
+        """
+        dim=next((x for x in ('Element Caption','ElementCaption')
+                  if x in self.all_dimensions()),None)
+        if dim is None:return self
+        col=self.all_dimensions().index(dim)
+        levels=set(self.meta[:,col])
+        if len(levels)>1 and (not grain or grain=='*'):
+            raise ValueError('این فایل چند سطح تجمیع محصول دارد؛ ابتدا Element Caption را انتخاب کنید تا SKU و Product با هم جمع نشوند.')
+        if not grain or grain=='*':return self
+        selected=self.meta[:,col]==grain
+        if not selected.any():raise ValueError('سطح تجمیع محصول انتخاب‌شده در فایل موجود نیست.')
+        return Dataset(self.meta[selected],self.volume[selected],self.value[selected],
+                       self.months,self.source,self.volume_unit,self.value_unit,
+                       self.dimension_names,self.schema,self.periodicity)
+
     def all_dimensions(self):
         return self.dimension_names or DIMS
 
