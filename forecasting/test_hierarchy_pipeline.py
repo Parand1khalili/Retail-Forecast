@@ -24,7 +24,7 @@ class HierarchicalPipelineTests(unittest.TestCase):
                        category, 'Child', 'Leaf', 'Other', 'All']
                 meta.append(row)
         self.d = Dataset(
-            np.array(meta, dtype=str),
+            np.array(meta, dtype='<U80'),
             np.full((16, 36), 20.),
             np.full((16, 36), 20.),
             [str(p) for p in pd.period_range('2023-01', periods=36, freq='M')],
@@ -85,6 +85,7 @@ class HierarchicalPipelineTests(unittest.TestCase):
         self.d.meta[:, DIMS.index('Subcategory')] = 'Not specified'
         self.d.meta[:, DIMS.index('Subcategory2')] = 'Not specified'
         self.d.meta[:, DIMS.index('Subcategory3')] = 'Not specified'
+        self.d.meta[:, DIMS.index('Subcategory4')] = 'Not specified'
         with patch.object(auto_engine, 'OUT', self.root), \
              patch.object(auto_engine, 'candidates', side_effect=self.candidates), \
              patch.object(auto_engine, 'forecast_component', side_effect=self.component):
