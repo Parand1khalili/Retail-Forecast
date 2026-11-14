@@ -1,0 +1,30 @@
+name: Forecast Python regression checks
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: forecasting/requirements.txt
+      - run: python -m pip install -r forecasting/requirements.txt
+      - name: Python syntax
+        run: python -m compileall -q forecasting
+      - name: Unit and synthetic integration tests
+        run: python -m unittest discover -s forecasting -p "test_*.py" -v
+      - name: Browser JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          html=Path('forecasting/app_ui.html').read_text(encoding='utf-8')
+          script=html.split('<script>',1)[1].split('</script>',1)[0]
+          Path('/tmp/forecast-ui.js').write_text(script,encoding='utf-8')
+          PY
+          node --check /tmp/forecast-ui.js
