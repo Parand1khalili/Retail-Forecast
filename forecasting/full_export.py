@@ -1,7 +1,7 @@
 """Export every observed series with three future periods to a native Excel workbook.
 
-The source Dataset is not modified. Every Market level gets its own global model
-selection; this avoids training across overlapping All/City/Region aggregates.
+The source Dataset is not modified. Each Market and report-grain level is
+modelled independently, using the same Global/Hierarchical strategy as the UI.
 The XLSX uses streaming OOXML with no Excel-specific dependency.
 """
 from __future__ import annotations
