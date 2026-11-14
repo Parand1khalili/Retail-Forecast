@@ -46,6 +46,16 @@ python -m unittest discover -s forecasting -p "test_*.py" -v
 
 در GitHub Actions نیز فایل `.github/workflows/forecast-tests.yml` همین بررسی‌ها و Syntax جاوااسکریپت را روی `master` اجرا می‌کند. بدون گزارش PASS از Runner نباید ادعای موفقیت کل Suite کرد.
 
+## گزارش CSV قابل تکرار روی Master واقعی
+
+برای مقایسه Global و Hierarchical در یک Holdout تاریخیِ کنارگذاشته‌شده، روی رایانه دارای Master اجرا کنید:
+
+```powershell
+python forecasting/evaluate_hierarchy.py "C:\\Data\\master.xlsx" --periodicity monthly --market All --metric volume_kg --output outputs/hierarchy_audit.csv
+```
+
+در صورت وجود چند سطح `Element Caption`، گزینه `--grain SKU` یا مقدار واقعی همان ستون را هم مشخص کنید. فایل CSV شامل WAPE، MAE، Bias، کاهش خطای مطلق، تعداد گروه‌های بهتر/بدتر و تعداد سری‌های دارای Recipe اختصاصی است. اگر تاریخچه کافی نباشد، به‌درستی `no_independent_holdout` گزارش می‌شود. هیچ داده خصوصی در Repository ذخیره نمی‌شود.
+
 ## محدودیت‌های باقیمانده
 
 تعداد مبدأهای ارزیابی به طول تاریخچه وابسته است و یک Holdout تاریخی به‌تنهایی تضمین عملکرد آینده نیست. بازه‌های دوماهه و ماهانه هرکدام براساس واحد مشاهده فایل سنجیده می‌شوند. افزایش تعداد مبدأها بار آموزش CatBoost را بالا می‌برد، هرچند برای شاخه‌های گروهی مدل مستقل جدیدی آموزش داده نمی‌شود. برای داده‌های دارای سلسله‌مراتب گزارش تجمیعی نامشخص، ابتدا باید Grain توسط کاربر تأیید شود.
