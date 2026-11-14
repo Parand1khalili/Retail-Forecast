@@ -51,7 +51,7 @@ def _period_label(end, frequency):
     return start.strftime('%b') + '-' + finish.strftime('%b') + ' ' + str(finish.year)
 
 
-def _modelled_rows(dataset):
+def _modelled_rows(dataset, strategy='hierarchical'):
     """Return all original observed-series rows, with aligned 1..3 predictions."""
     import numpy as np
 
@@ -71,7 +71,10 @@ def _modelled_rows(dataset):
         selected = dataset.for_market(level) if market_col is not None else dataset
         for metric in predictions:
             for horizon in (1, 2, 3):
-                forecast, _ = automatic_forecast(selected, metric, horizon)
+                # Keep the default positional call compatible with existing clients.
+                forecast, _ = (automatic_forecast(selected, metric, horizon)
+                               if strategy == 'hierarchical' else
+                               automatic_forecast(selected, metric, horizon, strategy='global'))
                 forecast = np.asarray(forecast, dtype=float)
                 if forecast.shape != (len(rows),):
                     raise ValueError('Unexpected forecast vector shape.')
@@ -81,11 +84,13 @@ def _modelled_rows(dataset):
     return predictions
 
 
-def export_workbook(dataset, filename):
+def export_workbook(dataset, filename, strategy='hierarchical'):
     """Write full observed+forecast volume/value matrices to filename."""
     import numpy as np
     from pandas import Period
 
+    if strategy not in ('global','hierarchical'):
+        raise ValueError('روش انتخاب مدل نامعتبر است.')
     if len(dataset.months) < 2:
         raise ValueError('دست‌کم دو دوره معتبر برای پیش‌بینی لازم است.')
     dims = dataset.all_dimensions()
@@ -100,7 +105,7 @@ def export_workbook(dataset, filename):
               for h in (1, 2, 3)]
     observed = [_period_label(end, dataset.periodicity) for end in dataset.months]
     ahead = [_period_label(end, dataset.periodicity) for end in future]
-    predicted = _modelled_rows(dataset)
+    predicted = _modelled_rows(dataset, strategy)
 
     filename = Path(filename)
     filename.parent.mkdir(parents=True, exist_ok=True)
