@@ -1,7 +1,7 @@
 """Run `python forecasting/app.py` then open http://127.0.0.1:8765 ."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse, unquote, parse_qs
 import json, threading, uuid, time, zipfile, os
 from app_core import Dataset, predict, ROOT
 from schema import SchemaError
@@ -62,6 +62,9 @@ class Handler(BaseHTTPRequestHandler):
             self.answer({'service':'ra-forecast','ready':True,'runtime':RUNTIME});return
         if path=='/api/export/full':
             import tempfile
+            strategy=parse_qs(urlparse(self.path).query).get('strategy',['hierarchical'])[0]
+            if strategy not in ('hierarchical','global'):
+                self.answer({'error':'روش انتخاب مدل نامعتبر است.'},400);return
             from full_export import export_workbook
             with lock: dataset=state['dataset']
             if dataset is None:
@@ -72,7 +75,7 @@ class Handler(BaseHTTPRequestHandler):
                 with training_lock:
                     with tempfile.TemporaryDirectory(prefix='emrc_export_') as folder:
                         workbook=Path(folder)/'retail_forecast_full.xlsx'
-                        export_workbook(dataset,workbook)
+                        export_workbook(dataset,workbook,strategy=strategy)
                         self.send_response(200)
                         self.send_header('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
                         self.send_header('Content-Disposition','attachment; filename="retail_forecast_full.xlsx"')
