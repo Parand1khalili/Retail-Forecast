@@ -18,11 +18,13 @@ def report(dataset, metric, output):
     policy=dataset_policy(dataset,metric,len(dataset.months)-1,'hierarchical')
     audit=policy.get('_holdout') or {}
     origin=audit.get('origin')
+    dims=dataset.all_dimensions()
+    market=(str(dataset.meta[0,dims.index('Market')]) if 'Market' in dims else 'N/A')
     records=[]
     for horizon in ('1','2','3'):
         stats=audit.get('horizons',{}).get(horizon)
         if stats:
-            row={'metric':metric,'market':dataset.source,
+            row={'metric':metric,'market':market,
                  'periodicity':dataset.periodicity,'horizon':horizon,
                  'audit_type':'untouched_holdout','origin':origin,
                  'selection_origins':','.join(policy['_selection_origins']),
@@ -40,7 +42,7 @@ def report(dataset, metric, output):
                  'series_using_override':stats['series_using_override'],
                  'selection_only':False}
         else:
-            row={'metric':metric,'market':dataset.source,'periodicity':dataset.periodicity,
+            row={'metric':metric,'market':market,'periodicity':dataset.periodicity,
                  'horizon':horizon,'audit_type':'no_independent_holdout',
                  'origin':'','selection_origins':','.join(policy['_selection_origins']),
                  'global_recipe':policy[horizon]['name'],'selection_only':True}
