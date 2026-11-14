@@ -13,7 +13,8 @@ from catboost import CatBoostRegressor
 from backtest import FeatureBuilder
 from light_benchmark import candidates as light_candidates
 from category_selection import (category_dimensions, select_category_overrides,
-                                forecast_with_recipes, series_recipes, holdout_comparison)
+                                forecast_with_recipes, series_recipes, holdout_comparison,
+                                filtered_holdout_summary)
 
 OUT=ROOT/'outputs/automatic_models'
 OUT.mkdir(parents=True,exist_ok=True)
@@ -434,6 +435,16 @@ def future_request(d,request):
     strategy=request.get('strategy','hierarchical')
     cells,recipe=automatic_forecast(d,metric,horizon,strategy=strategy)
     category_summary=_selected_category_explanation(d,metric,horizon,mask,strategy,recipe)
+    if (category_summary and strategy=='hierarchical'
+            and category_summary.get('holdout_origin')):
+        # The selected series receive their own OUT-OF-SAMPLE error metrics.
+        # This does not influence model selection or recipe thresholds.
+        historical_policy=dataset_policy(d,metric,len(d.months)-1,strategy)
+        holdout_index=d.months.index(category_summary['holdout_origin'])
+        held_candidates=candidates(d,metric,holdout_index)
+        category_summary['selected_filter_holdout']=filtered_holdout_summary(
+            d,metric,mask,horizon,holdout_index,held_candidates,
+            historical_policy[str(horizon)],historical_policy['_hierarchy'])
     target=str(pd.Period(d.months[-1],freq='M')+horizon*d.period_months)
     history=[{'month':d.months[j],'value':float(d.metric(metric)[mask,j].sum())} for j in range(max(0,len(d.months)-12),len(d.months))]
     benchmark=None;selected_benchmark=None
