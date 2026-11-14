@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 
 from category_selection import (category_dimensions, select_category_overrides,
-    series_recipes, forecast_with_recipes, holdout_comparison)
+    series_recipes, forecast_with_recipes, holdout_comparison, filtered_holdout_summary)
 
 
 class FakeDataset:
@@ -111,6 +111,23 @@ class CategoryRecipeTests(unittest.TestCase):
         d.volume[:, 30:] *= 1000.  # Strictly after selection targets
         again = select_category_overrides(d, 'volume', origins, predictions, selected)
         self.assertEqual(policy, again)
+
+    def test_selected_filter_holdout_is_distinct_from_global_market(self):
+        d, origins, predictions, selected = make_case()
+        policy = select_category_overrides(d, 'volume', origins, predictions, selected)
+        mask = np.array([False]*8+[True]*8)
+        result = filtered_holdout_summary(d, 'volume', mask, 1, 27,
+                                          predictions[27], selected['1'], policy)
+        self.assertTrue(result['independent'])
+        self.assertEqual(result['series'], 8)
+        self.assertEqual(result['hierarchical']['wape'], 0.)
+        self.assertEqual(result['global']['wape'], .5)
+        self.assertEqual(result['hierarchical']['mae'], 0.)
+        d.volume[8:, :] = 0.
+        zero = filtered_holdout_summary(d, 'volume', mask, 1, 27,
+                                         predictions[27], selected['1'], policy)
+        self.assertIsNone(zero['hierarchical']['wape'])
+        self.assertGreater(zero['hierarchical']['mae'], 0.)
 
     def test_fractional_forecast_and_missing_percent_denominator(self):
         d, origins, predictions, selected = make_case()
