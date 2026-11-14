@@ -406,8 +406,14 @@ def _selected_category_explanation(d,metric,horizon,mask,strategy,recipe):
         item=rows[int(i)]
         key=(item['name'],tuple(item.get('path',[])))
         if key not in selected:
-            selected[key]={'recipe':item['name'],'path':item.get('path',[]),
-                           'source':'Category' if item.get('path') else 'Global / inherited',
+            active_path=item.get('path',[])
+            meaningful=[dim for dim in policy['_hierarchy'].get('dimensions',[])
+                        if str(d.meta[int(i),d.all_dimensions().index(dim)]).strip().casefold()
+                        not in ('','all','not specified','-', '—')]
+            origin=('Parent fallback' if active_path and len(active_path)<len(meaningful)
+                    else ('Category' if active_path else 'Global / inherited'))
+            selected[key]={'recipe':item['name'],'path':active_path,
+                           'source':origin,
                            'series':0,'group_selection_metrics':item.get('evidence',{})}
         selected[key]['series']+=1
     return {**summary,'selected_groups':sorted(selected.values(),
@@ -420,7 +426,9 @@ def future_request(d,request):
     metric=request.get('metric','volume_kg');d.metric(metric)
     horizon=int(request.get('horizon',1))
     if not 1<=horizon<=3:raise ValueError('افق پشتیبانی‌شده یک تا سه ماه بعد از آخرین ماه فایل است.')
-    d=d.for_market(request.get('filters',{}).get('Market'))
+    filters=request.get('filters',{})
+    d=d.for_market(filters.get('Market'))
+    d=d.for_grain(filters.get('Element Caption') or filters.get('ElementCaption'))
     mask=d.mask(request.get('filters',{}))
     if not mask.any():raise ValueError('ترکیب انتخاب‌شده در فایل موجود نیست.')
     strategy=request.get('strategy','hierarchical')
