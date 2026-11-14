@@ -65,22 +65,32 @@ def _modelled_rows(dataset, strategy='hierarchical'):
         market_col = None
         levels = [None]
 
+    grain_name=next((name for name in ('Element Caption','ElementCaption') if name in dims),None)
+    grain_col=dims.index(grain_name) if grain_name is not None else None
     for level in levels:
-        rows = (np.flatnonzero(dataset.meta[:, market_col] == level)
-                if market_col is not None else np.arange(count))
-        selected = dataset.for_market(level) if market_col is not None else dataset
-        for metric in predictions:
-            for horizon in (1, 2, 3):
-                # Keep the default positional call compatible with existing clients.
-                forecast, _ = (automatic_forecast(selected, metric, horizon)
-                               if strategy == 'hierarchical' else
-                               automatic_forecast(selected, metric, horizon, strategy='global'))
-                forecast = np.asarray(forecast, dtype=float)
-                if forecast.shape != (len(rows),):
-                    raise ValueError('Unexpected forecast vector shape.')
-                if not np.isfinite(forecast).all() or (forecast < 0).any():
-                    raise ValueError('Forecast contains invalid values.')
-                predictions[metric][rows, horizon - 1] = forecast
+        market_mask=(dataset.meta[:,market_col] == level if market_col is not None
+                     else np.ones(count,dtype=bool))
+        selected_market=dataset.for_market(level) if market_col is not None else dataset
+        grain_levels=(list(dict.fromkeys(selected_market.meta[:,grain_col].tolist()))
+                      if grain_col is not None else [None])
+        for grain in grain_levels:
+            mask=market_mask.copy()
+            if grain_col is not None:
+                mask &= dataset.meta[:,grain_col] == grain
+            rows=np.flatnonzero(mask)
+            selected=selected_market.for_grain(grain) if grain is not None else selected_market
+            for metric in predictions:
+                for horizon in (1, 2, 3):
+                    # Default call keeps previous clients and test mocks compatible.
+                    forecast, _ = (automatic_forecast(selected, metric, horizon)
+                                   if strategy == 'hierarchical' else
+                                   automatic_forecast(selected, metric, horizon, strategy='global'))
+                    forecast=np.asarray(forecast,dtype=float)
+                    if forecast.shape != (len(rows),):
+                        raise ValueError('Unexpected forecast vector shape.')
+                    if not np.isfinite(forecast).all() or (forecast < 0).any():
+                        raise ValueError('Forecast contains invalid values.')
+                    predictions[metric][rows,horizon-1]=forecast
     return predictions
 
 
