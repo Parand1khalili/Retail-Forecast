@@ -349,6 +349,11 @@ def dataset_policy(d,metric,cutoff,strategy='hierarchical'):
 
 
 def automatic_forecast(d,metric,horizon,cutoff=None,strategy='hierarchical'):
+    if 'Market' in d.all_dimensions() and len(set(d.meta[:,d.all_dimensions().index('Market')]))>1:
+        raise ValueError('ابتدا یک سطح Market را انتخاب کنید؛ سطح‌های مکانی هم‌پوشان هستند.')
+    for field in ('Element Caption','ElementCaption'):
+        if field in d.all_dimensions() and len(set(d.meta[:,d.all_dimensions().index(field)]))>1:
+            raise ValueError('ابتدا سطح Element Caption را انتخاب کنید؛ سطوح SKU و Product نباید با هم ترکیب شوند.')
     cutoff=len(d.months)-1 if cutoff is None else cutoff
     if strategy not in ('hierarchical','global'):
         raise ValueError('روش انتخاب مدل نامعتبر است.')
