@@ -741,11 +741,26 @@ function categorySelectionHtml(r){
     ' · گروه‌های بهتر/بدتر: '+persian(h.groups_improved)+' / '+persian(h.groups_deteriorated)+
     ' · این مبدأ برای انتخاب Recipe استفاده نشده است.</span></div>':
     '<div class="detail"><strong>Holdout مستقل</strong><span>به‌دلیل تاریخچه ناکافی، موجود نیست؛ نتایج انتخاب به‌معنای آزمون مستقل نیستند.</span></div>';
+  const selectedHoldout=info.selected_filter_holdout;
+  let selectedScore='';
+  if(selectedHoldout&&selectedHoldout.hierarchical){
+    const metrics=selectedHoldout.hierarchical,prior=selectedHoldout.global;
+    const wape=metrics.wape===null?'تعریف‌نشده (فروش واقعی صفر)':percent(metrics.wape);
+    selectedScore='<div class="detail"><strong>آزمون مستقل همین فیلتر</strong><span>'+
+      'هدف: '+escapeHtml(periodName(selectedHoldout.target,r.period_months))+
+      ' · '+persian(selectedHoldout.series)+' سری · فروش واقعی: '+persian(metrics.actual)+
+      ' · پیش‌بینی: '+persian(metrics.predicted)+
+      ' · WAPE: '+wape+
+      ' · MAE: '+persian(metrics.mae)+
+      ' · Bias: '+(metrics.bias===null?'N/A':percent(metrics.bias))+
+      ' · WAPE روش Global: '+(prior.wape===null?'N/A':percent(prior.wape))+
+      '</span></div>';
+  }
   return '<section class="evidence"><h3>Recipe و ارزیابی مخصوص ساختار دسته‌بندی</h3>'+
     '<p>مدل‌ها روی کل سطح Market آموزش می‌بینند؛ Recipe هر دسته با شواهد انتخاب می‌شود یا از والد به ارث می‌رسد.</p>'+
     '<div class="details">'+global+
     '<div class="detail"><strong>مبدأهای انتخاب</strong><span>'+escapeHtml(origins)+'</span></div>'+
-    rows+holdout+'</div>'+
+    rows+selectedScore+holdout+'</div>'+
     '<p class="help">WAPE گروه برای کل گروه محاسبه می‌شود. اگر SKU یا برند را فیلتر کرده‌اید، این عدد WAPE اختصاصی آن SKU نیست؛ برای تقاضای صفر، درصد خطا ممکن است تعریف‌نشده باشد.</p></section>';
 }
 function renderFuture(r){
