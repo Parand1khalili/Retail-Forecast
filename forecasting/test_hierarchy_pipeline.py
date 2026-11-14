@@ -92,6 +92,44 @@ class HierarchicalPipelineTests(unittest.TestCase):
             _, calibration = auto_engine.automatic_forecast(self.d, 'volume_kg', 1)
         self.assertFalse(calibration['category_selection']['active'])
 
+    def test_features_ignore_any_actuals_after_historical_origin(self):
+        import pandas as pd
+        earlier = auto_engine.Features(self.d, 'volume_kg', 0, 35)
+        x1, scale1, ever1 = earlier.features(11, 1)
+        changed = Dataset(self.d.meta.copy(), self.d.volume.copy(),
+                          self.d.value.copy(), self.d.months, 'changed',
+                          dimension_names=self.d.all_dimensions())
+        changed.volume[:, 12:] *= 1000.
+        changed.value[:, 12:] *= 1000.
+        later = auto_engine.Features(changed, 'volume_kg', 0, 35)
+        x2, scale2, ever2 = later.features(11, 1)
+        pd.testing.assert_frame_equal(x1, x2)
+        np.testing.assert_array_equal(scale1, scale2)
+        np.testing.assert_array_equal(ever1, ever2)
+
+    def test_fit_models_ignore_future_actuals_and_reuse_same_cache_key(self):
+        class FakeCatBoost:
+            def __init__(self, **params):
+                pass
+            def fit(self, x, y, cat_features=None, sample_weight=None):
+                return self
+            def predict(self, x):
+                return np.zeros(len(x))
+            def save_model(self, path):
+                Path(path).write_text('fake fitted model')
+        with patch.object(auto_engine, 'OUT', self.root), \
+             patch.object(auto_engine, 'CatBoostRegressor', FakeCatBoost):
+            before = auto_engine.fit_models(self.d, 'volume_kg', 23, 'all')
+            altered = Dataset(self.d.meta.copy(), self.d.volume.copy(),
+                              self.d.value.copy(), self.d.months, 'changed',
+                              dimension_names=self.d.all_dimensions())
+            altered.volume[:, 24:] += 9000.
+            altered.value[:, 24:] += 9000.
+            after = auto_engine.fit_models(altered, 'volume_kg', 23, 'all')
+        self.assertEqual(set(before), set(after))
+        for name in before:
+            np.testing.assert_array_equal(before[name], after[name])
+
     def test_conflicting_report_grains_must_be_selected(self):
         m = np.array([['Tehran','Co','A','SKU'], ['Tehran','Co','A','Product']], dtype=str)
         d = Dataset(m,np.ones((2,36)),np.ones((2,36)),self.d.months,'grains',
