@@ -264,7 +264,11 @@ input[type=text]:focus,select:focus{border-color:var(--focus)}
 </section>
 <section class="wizard-stage" data-panel="2" hidden><div class="stage-heading"><span class="stage-num">03</span><h2>انتخاب بازار و شاخص</h2></div><p class="stage-lead">شهر، برند و سطح دسته‌بندی موردنظر را مشخص کنید. ابتدا سطح مکانی را مشخص کنید؛ جمع‌کردن All و City با هم مجاز نیست.</p><div class="field"><label for="metric">شاخص</label><select id="metric"><option value="volume_kg">فروش حجمی، کیلوگرم</option><option value="value_1000_toman">فروش ریالی، هزار تومان</option></select></div><div id="filters"></div><p class="help">فیلترها بر اساس ترکیب‌های موجود در فایل ساخته می‌شوند و مقدار پیش‌بینی را تعیین می‌کنند. معیار انتخاب مدل روی کل فایل محاسبه می‌شود.</p>
 <div class="stage-actions"><button id="nextFilters" class="btn" type="button">ادامه: انتخاب ماه</button><button id="backFilters" class="btn secondary" type="button">بازگشت به ستون‌ها</button></div></section>
-<section class="wizard-stage" data-panel="3" hidden><div class="stage-heading"><span class="stage-num">04</span><h2>تنظیم و اجرای پیش‌بینی</h2></div><p class="stage-lead">دوره موردنظر را انتخاب کنید؛ موتور به‌طور خودکار روش‌ها را ارزیابی می‌کند و مدل نهایی را می‌سازد.</p><p class="help" id="latestMonth"></p><div class="field"><label for="horizon">دوره مقصدِ بدون داده</label><select id="horizon"></select></div><div hidden><select id="cutoff"></select><select id="window"></select><select id="method"><option value="auto">خودکار</option></select></div><div class="run-summary" id="runSummary" aria-live="polite"><div><strong>خلاصه درخواست</strong><p id="runSummaryText">پس از انتخاب بازار، خلاصه درخواست در اینجا نمایش داده می‌شود.</p></div></div><p class="help">روش منتخب بر اساس خطای ارزیابی تاریخی انتخاب می‌شود؛ این خطا تضمین دقت ماه آینده نیست.</p><div class="stage-actions"><button class="btn" id="run">محاسبه پیش‌بینی</button><button class="btn secondary" id="backTarget" type="button">بازگشت به فیلترها</button></div></section>
+<section class="wizard-stage" data-panel="3" hidden><div class="stage-heading"><span class="stage-num">04</span><h2>تنظیم و اجرای پیش‌بینی</h2></div><p class="stage-lead">دوره موردنظر را انتخاب کنید؛ موتور به‌طور خودکار روش‌ها را ارزیابی می‌کند و مدل نهایی را می‌سازد.</p><p class="help" id="latestMonth"></p><div class="field"><label for="horizon">دوره مقصدِ بدون داده</label><select id="horizon"></select></div><div class="field"><label for="selectionStrategy">روش انتخاب Recipe</label>
+<select id="selectionStrategy"><option value="hierarchical">چندسطحی؛ با fallback به Market</option>
+<option value="global">فقط Global Market (مقایسه با روش قبلی)</option></select>
+<p class="help">CatBoost همچنان روی داده‌های کل Market آموزش می‌بیند؛ در حالت چندسطحی، Recipe برای شاخه‌های دارای شواهد کافی جدا انتخاب می‌شود.</p></div>
+<div hidden><select id="cutoff"></select><select id="window"></select><select id="method"><option value="auto">خودکار</option></select></div><div class="run-summary" id="runSummary" aria-live="polite"><div><strong>خلاصه درخواست</strong><p id="runSummaryText">پس از انتخاب بازار، خلاصه درخواست در اینجا نمایش داده می‌شود.</p></div></div><p class="help">روش منتخب بر اساس خطای ارزیابی تاریخی انتخاب می‌شود؛ این خطا تضمین دقت ماه آینده نیست.</p><div class="stage-actions"><button class="btn" id="run">محاسبه پیش‌بینی</button><button class="btn secondary" id="backTarget" type="button">بازگشت به فیلترها</button></div></section>
 </aside><main class="stage-card" id="main" data-panel="4" aria-live="polite" hidden><div class="result-actions"><button class="btn secondary" id="exportFull" type="button">دانلود Excel کامل (همه سطوح و ۳ دوره)</button><button class="btn secondary" id="editSelection" type="button">تغییر فیلترها</button><button class="btn secondary" id="editTarget" type="button">تغییر ماه هدف</button><button class="btn secondary" id="newSource" type="button">فایل جدید</button></div><div id="results"><div class="empty"><div class="empty-visual">▤</div><strong>آمادهٔ ساخت پیش‌بینی</strong><p>فایل مستر، بازار و ماه هدف را انتخاب کنید؛ سپس پیش‌بینی و مدل منتخب اینجا نمایش داده می‌شود.</p></div></div></main></div>
 <div class="foot">نتایج بر پایه داده‌های گزارش Retail Audit محاسبه می‌شوند. واحدها از فایل ورودی خوانده می‌شوند و خطای تاریخی به معنی تضمین عملکرد آینده نیست.</div>
 </div><script>
@@ -355,7 +359,8 @@ function updateRunSummary(){
   const selectedCount=data.rows.filter(row=>dimNames.every((key,i)=>!filters[key]||row[i]===filters[key])).length;
   const parts=[sourceMode==='sample'?'داده نمونه':data.source,data.periodicity==='bimonthly'?'دوماهه':'ماهانه',el('metric').selectedOptions?.[0]?.textContent||'فروش حجمی',target,
     Object.entries(filters).map(([key,val])=>labels[dimNames.indexOf(key)]+': '+val).join('، ')||'تمام دسته‌بندی‌ها',
-    persian(selectedCount)+' سری موجود'];
+    persian(selectedCount)+' سری موجود',
+    el('selectionStrategy').value==='global'?'انتخاب Global-only':'انتخاب چندسطحی'];
   el('runSummaryText').textContent=parts.join('  ·  ');
 }
 const choice=(node,values,selected)=>{node.replaceChildren();for(const [value,name] of values){let o=document.createElement('option');o.value=value;o.textContent=name;node.append(o)}if(values.some(x=>x[0]===selected))node.value=selected};
@@ -686,7 +691,7 @@ function selectionEvidenceHtml(r){
   const explanation=rank===0&&runner
     ?'Recipe منتخب در این مقایسه کمترین WAPE را داشته است.'+(delta!==null?' اختلاف آن با نزدیک‌ترین رقیب '+new Intl.NumberFormat('fa-IR',{maximumFractionDigits:2}).format(delta*100)+' واحد درصد است.':'')
     :'Recipe منتخب با کمترین مجموع خطای مطلق در مقیاس شهر × محصول تعیین شده است.';
-  return '<section class="evidence"><div class="evidence-header"><div><h3>چرا این روش انتخاب شد؟</h3>'+
+  return '<section class="evidence"><div class="evidence-header"><div><h3>ارزیابی Recipe مبنا در کل Market</h3>'+
     '<p>مقایسه واقعی روش‌های قابل اجرا روی ماه‌های گذشته، با معیار WAPE؛ مقدار کمتر بهتر است.</p></div>'+
     '<span class="evidence-badge">'+persian(valid.length)+' روش مقایسه‌شده</span></div>'+
     '<div class="evidence-meta">شاخص: '+(r.metric==='volume_kg'?'حجم فروش':'مبلغ فروش')+
@@ -694,11 +699,54 @@ function selectionEvidenceHtml(r){
     '<div class="evidence-grid"><div class="evidence-box"><h4>مقایسه WAPE (تا ۸ روش برتر و مدل منتخب)</h4>'+
     '<div class="evidence-bars">'+entries+'</div><div class="evidence-caption">طول میله‌ها متناسب با خطاست؛ کوتاه‌تر بهتر است. نتایج از Validation واقعی به دست آمده‌اند.</div></div>'+
     '<div class="evidence-box"><h4>عملکرد Recipe منتخب در هر مبدأ</h4>'+detail+
-    '<div class="evidence-caption">WAPE بر اساس مجموع خطای مطلق تمام سلول‌های شهر × محصول است؛ اختلاف مجموع کل فروش به‌تنهایی معیار انتخاب نیست.</div></div></div>'+
+    '<div class="evidence-caption">این WAPE برای تمام ترکیب‌های مکان و محصولِ سطح Market است، نه فقط محصول یا برند فیلترشده.</div></div></div>'+
     '<div class="evidence-reason">'+escapeHtml(explanation)+'</div>'+
     '<div class="evidence-all"><details><summary>مشاهده جدول کامل '+persian(valid.length)+' روش و خطاهای آن‌ها</summary>'+
     '<div class="evidence-table-wrap"><table class="evidence-table"><thead><tr><th>رتبه</th><th>روش / Recipe</th><th>WAPE</th></tr></thead><tbody>'+table+'</tbody></table></div></details></div>'+
     '<p>این رتبه‌بندی برای <strong>همه سری‌های سطح مکانی انتخاب‌شده</strong> محاسبه شده است؛ نه فقط مکان یا برند فیلترشده در این درخواست. خطای تاریخی، تضمین دقت آینده نیست.</p></section>';
+}
+function categorySelectionHtml(r){
+  const info=r.category_selection;
+  if(!info)return '';
+  const strategy=info.strategy==='global'?'Global-only':'چندسطحی با fallback';
+  const global='<div class="detail"><strong>سطح مبنا</strong><span>Market: '+escapeHtml(r.filters?.Market||'مجموعه حاضر')+
+    ' · '+escapeHtml(strategy)+'</span></div>';
+  const origins=Array.isArray(info.selection_origins)?info.selection_origins.join('، '):'ثبت نشده';
+  let rows='';
+  const selected=Array.isArray(info.selected_groups)?info.selected_groups:[];
+  if(selected.length){
+    rows=selected.map(item=>{
+      const target=(item.path||[]).join(' / ')||'Global Market';
+      const ev=item.group_selection_metrics||{}, group=ev.group||{};
+      const evidence=(typeof group.wape==='number'?' · WAPE گروه در انتخاب: '+percent(group.wape):'')+
+        (typeof ev.relative_improvement==='number'?' · بهبود نسبت به والد: '+percent(ev.relative_improvement):'');
+      const source=item.source==='Category'?'Recipe ویژه گروه':
+        item.source==='Parent fallback'?'ارث‌بری از گروه والد':'Fallback به Global';
+      return '<div class="detail"><strong>'+escapeHtml(target)+'</strong><span>'+
+        escapeHtml(source)+' · '+persian(item.series)+' سری انتخاب‌شده · '+
+        escapeHtml(recipeComponent(item.recipe).label)+escapeHtml(evidence)+
+        '</span></div>';
+    }).join('');
+  }else{
+    rows='<div class="detail"><strong>Recipe مؤثر</strong><span>'+
+      (info.active?'جزئیات گروه برای این فیلتر موجود نیست.':'Global یا fallback به Market؛ شواهد کافی برای گروه وجود ندارد.')+
+      '</span></div>';
+  }
+  const h=info.holdout||null;
+  const holdout=h&&h.global&&h.hierarchical?
+    '<div class="detail"><strong>ارزیابی تاریخی مستقل (یک مبدأ)</strong><span>'+
+    'مبدأ: '+escapeHtml(info.holdout_origin||'')+
+    ' · WAPE Global: '+percent(h.global.wape)+
+    ' · WAPE چندسطحی: '+percent(h.hierarchical.wape)+
+    ' · گروه‌های بهتر/بدتر: '+persian(h.groups_improved)+' / '+persian(h.groups_deteriorated)+
+    ' · این مبدأ برای انتخاب Recipe استفاده نشده است.</span></div>':
+    '<div class="detail"><strong>Holdout مستقل</strong><span>به‌دلیل تاریخچه ناکافی، موجود نیست؛ نتایج انتخاب به‌معنای آزمون مستقل نیستند.</span></div>';
+  return '<section class="evidence"><h3>Recipe و ارزیابی مخصوص ساختار دسته‌بندی</h3>'+
+    '<p>مدل‌ها روی کل سطح Market آموزش می‌بینند؛ Recipe هر دسته با شواهد انتخاب می‌شود یا از والد به ارث می‌رسد.</p>'+
+    '<div class="details">'+global+
+    '<div class="detail"><strong>مبدأهای انتخاب</strong><span>'+escapeHtml(origins)+'</span></div>'+
+    rows+holdout+'</div>'+
+    '<p class="help">WAPE گروه برای کل گروه محاسبه می‌شود. اگر SKU یا برند را فیلتر کرده‌اید، این عدد WAPE اختصاصی آن SKU نیست؛ برای تقاضای صفر، درصد خطا ممکن است تعریف‌نشده باشد.</p></section>';
 }
 function renderFuture(r){
   const unit=escapeHtml(r.unit),calibration=r.calibration?.validation_wape;
@@ -708,7 +756,7 @@ function renderFuture(r){
   const family=recipe.price_guard?'قاعده مقاوم به جهش قیمت':blended?'ترکیب وزنی مدل‌ها':recipeComponent(recipe.name).label;
   const origins=recipe.validation_origins||[];
   const score=selectionScore!==null?selectionScore:(recipe.price_guard?null:benchmarkScore);
-  const scoreLabel=selectionScore!==null?'WAPE اعتبارسنجی مدل · سطح مکانی منتخب':'WAPE آزمون تاریخی نمونه ماست';
+  const scoreLabel=selectionScore!==null?'WAPE انتخاب Global · کل سطح Market':'WAPE آزمون تاریخی نمونه ماست';
   const scorePeriod=selectionScore!==null?
     (origins.length?'مبدأهای '+origins.join('، '):'دوره ارزیابی تاریخی همین فایل'):
     ('آزمون گذشته · '+(r.selected_benchmark?.target||'مجموعه مرجع ماست'));
@@ -723,14 +771,15 @@ function renderFuture(r){
   const ariaScore=score!==null?'دو شاخص خلاصه':'یک شاخص خلاصه';
   el('results').innerHTML=
     '<div class="resulthead"><div><div class="eyebrow">FORECAST RESULT</div><h2>پیش‌بینی فروش · <bdi dir="ltr">'+escapeHtml(periodName(r.target,r.period_months))+'</bdi></h2>'+
-    '<div class="source">'+persian(r.rows)+' ترکیب شهر/محصول · '+(r.metric==='volume_kg'?'فروش حجمی':'فروش ریالی')+
+    '<div class="source">'+persian(r.rows)+' ترکیب مکان/محصول · '+(r.metric==='volume_kg'?'فروش حجمی':'فروش ریالی')+
     '</div></div><span class="badge">محاسبه تکمیل شد</span></div>'+
     '<section class="kpis" aria-label="'+ariaScore+'"><div class="kpi primary"><div class="label">مقدار پیش‌بینی‌شده</div>'+
     '<strong>'+persian(r.prediction)+' <small>'+unit+'</small></strong>'+previousLine+'</div>'+scoreHtml+'</section>'+
     '<div class="chartbox"><h3>روند فروش و برآورد ماه هدف</h3>'+chart(r)+
     '<div class="legend"><span><i style="background:#355c7d"></i>فروش ثبت‌شده</span>'+
     '<span><i style="background:transparent;border-top:3px dashed #6c5b78;height:0"></i>پیش‌بینی (خط‌چین)</span></div></div>'+
-    '<div class="selected-method">روش منتخب: <strong>'+escapeHtml(family)+'</strong></div>'+
+    '<div class="selected-method">Recipe مرجع Global: <strong>'+escapeHtml(family)+'</strong></div>'+
+    categorySelectionHtml(r)+
     selectionEvidenceHtml(r)+
     '<details class="model-details"><summary>جزئیات روش، ورودی و ارزیابی</summary>'+
     recipeHtml(r)+
@@ -741,12 +790,13 @@ function renderFuture(r){
     '</div></details><div class="note">'+escapeHtml(r.note)+'</div>';
 }
 
+el('selectionStrategy').onchange=()=>{invalidateResult();updateRunSummary()};
 el('exportFull').onclick=async()=>{
   if(!data||busy)return;
   lockButtons(true);
   status('در حال پیش‌بینی همه سری‌ها و آماده‌سازی فایل Excel؛ برای فایل‌های بزرگ ممکن است محاسبات طولانی باشد.','working');
   try{
-    const response=await fetch('/api/export/full');
+    const response=await fetch('/api/export/full?strategy='+encodeURIComponent(el('selectionStrategy').value));
     if(!response.ok){
       let message='ساخت فایل کامل موفق نبود.';
       try{message=(await response.json()).error||message}catch(_){}
@@ -772,7 +822,7 @@ el('run').onclick=async()=>{
     timer=setInterval(()=>status('در حال محاسبه و اعتبارسنجی تاریخی… '+persian(Math.floor((Date.now()-begun)/1000))+' ثانیه','working'),1000);
     let filters={};
     dimNames.forEach((name,i)=>{let v=el('f'+i).value;if(v!=='*')filters[name]=v});
-    const r=await post('/api/predict',{metric:el('metric').value,horizon:Number(el('horizon').value),filters});
+    const r=await post('/api/predict',{metric:el('metric').value,horizon:Number(el('horizon').value),filters,strategy:el('selectionStrategy').value});
     renderFuture(r);appendSelectedBenchmark(r);
     resultReady=true;showStage(4,true);
     status('پیش‌بینی '+r.target+' با موفقیت آماده شد؛ نمودار و دلایل انتخاب روش در صفحه نتایج نمایش داده شده‌اند.','success');
