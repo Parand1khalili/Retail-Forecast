@@ -49,7 +49,8 @@ class UploadServerTests(unittest.TestCase):
             connection.close()
         import full_export
         self.app.state['dataset'] = object()
-        def fake_export(dataset, destination):
+        def fake_export(dataset, destination, strategy='hierarchical'):
+            self.assertEqual(strategy,'hierarchical')
             self.assertIs(dataset, self.app.state['dataset'])
             destination.write_bytes(b'test-xlsx-bytes')
         with patch.object(full_export, 'export_workbook', side_effect=fake_export):
@@ -63,6 +64,16 @@ class UploadServerTests(unittest.TestCase):
                 self.assertEqual(response.read(), b'test-xlsx-bytes')
             finally:
                 connection.close()
+
+    def test_full_export_strategy_query_validation(self):
+        connection = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=5)
+        try:
+            connection.request('GET', '/api/export/full?strategy=invalid')
+            response = connection.getresponse()
+            self.assertEqual(response.status, 400)
+            self.assertIn('error', json.loads(response.read()))
+        finally:
+            connection.close()
 
     def test_no_sample_still_allows_uploading(self):
         status, body = self.request("GET", "/api/data")
