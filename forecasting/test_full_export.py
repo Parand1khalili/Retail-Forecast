@@ -88,6 +88,31 @@ class FullExportTests(unittest.TestCase):
         self.assertEqual(rows[1][0],'=HYPERLINK("bad")')
         self.assertNotIn('<f>',xml)
 
+    def test_mixed_product_grains_are_forecast_in_separate_groups(self):
+        dims=['City','Company','Brand','Market','Element Caption']
+        meta=np.array([['All','Co','A','All','SKU'],
+                       ['All','Co','A','All','Product']],dtype='<U32')
+        d=Dataset(meta,np.array([[5.,6.],[50.,60.]]),
+                  np.array([[7.,8.],[70.,80.]]),
+                  ['2026-05','2026-06'],'grain',dimension_names=dims)
+        seen=[]
+        def forecast(sub,metric,horizon):
+            seen.append(tuple(sub.meta[:,dims.index('Element Caption')]))
+            return sub.metric(metric)[:,-1],{}
+        with patch.object(full_export,'automatic_forecast',side_effect=forecast):
+            full_export.export_workbook(d,self.path)
+        self.assertEqual(set(seen),{('SKU',),('Product',)})
+        self.assertEqual(len(seen),12)
+
+    def test_global_only_option_is_forwarded_through_export(self):
+        seen=[]
+        def forecast(d,metric,horizon,strategy='hierarchical'):
+            seen.append(strategy)
+            return d.metric(metric)[:,-1],{}
+        with patch.object(full_export,'automatic_forecast',side_effect=forecast):
+            full_export.export_workbook(self.data,self.path,strategy='global')
+        self.assertEqual(seen,['global']*12)
+
     def test_no_truncated_workbook_when_forecast_fails(self):
         with patch.object(full_export,'automatic_forecast',side_effect=RuntimeError('training failed')):
             with self.assertRaisesRegex(RuntimeError,'training failed'):
