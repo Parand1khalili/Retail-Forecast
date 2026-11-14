@@ -12,6 +12,8 @@ sys.path.insert(0,str(ROOT/'analysis/model_deps'))
 from catboost import CatBoostRegressor
 from backtest import FeatureBuilder
 from light_benchmark import candidates as light_candidates
+from category_selection import (category_dimensions, select_category_overrides,
+                                forecast_with_recipes, series_recipes, holdout_comparison)
 
 OUT=ROOT/'outputs/automatic_models'
 OUT.mkdir(parents=True,exist_ok=True)
@@ -20,7 +22,7 @@ PARAMS=dict(iterations=180,depth=5,learning_rate=.06,l2_leaf_reg=10,
             allow_writing_files=False,has_time=True,one_hot_max_size=32)
 VERSION='global-v3-frequencies-and-market-levels'
 SELECTION_VERSION='robust-price-volume-v3'
-POLICY_VERSION='shared-origin-geographic-level-v4-frequency'
+POLICY_VERSION='shared-origin-category-v5-independent-holdout'
 
 def emit(*args):print(*args,flush=True)
 
@@ -302,34 +304,116 @@ def forecast_component(d,metric,cutoff,name):
     vol=v[parts[1]] if parts[1] in ['raw','scaled','log'] else baseline(d.volume[:,:cutoff+1],parts[1],1)[:,None]
     return v['price']*vol
 
-def dataset_policy(d,metric,cutoff):
-    """Re-select on completed targets of the supplied dataset, never future dates."""
-    digest=hashlib.sha256(VERSION.encode()+POLICY_VERSION.encode()+metric.encode()+d.periodicity.encode()+json.dumps(d.all_dimensions()).encode()+d.meta.tobytes()+d.volume[:,:cutoff+1].tobytes()+d.value[:,:cutoff+1].tobytes()).hexdigest()[:24]
+def _selection_origins(d,cutoff,strategy):
+    """Selection folds precede the optional untouched holdout origin.
+
+    Global mode deliberately keeps the original two origins. Category mode
+    needs at least 30 observations for 2 selection folds plus 1 holdout; with
+    36+ observations it uses 3 selection origins. Short panels retain Global.
+    """
+    if strategy=='hierarchical' and category_dimensions(d) and cutoff>=29:
+        origins=[cutoff-9,cutoff-6]
+        if cutoff>=35:origins.insert(0,cutoff-12)
+        return origins,cutoff-3
+    return [o for o in [cutoff-6,cutoff-3] if o>=11],None
+
+
+def dataset_policy(d,metric,cutoff,strategy='hierarchical'):
+    """Select recipes exclusively on completed historical target observations."""
+    if strategy not in ('hierarchical','global'):
+        raise ValueError('روش انتخاب مدل باید سلسله‌مراتبی یا Global باشد.')
+    digest=hashlib.sha256(VERSION.encode()+POLICY_VERSION.encode()+metric.encode()+strategy.encode()+
+        d.periodicity.encode()+json.dumps(d.all_dimensions()).encode()+d.meta.tobytes()+
+        d.volume[:,:cutoff+1].tobytes()+d.value[:,:cutoff+1].tobytes()).hexdigest()[:24]
     cached=OUT/'runtime_policies'/f'{digest}.json';cached.parent.mkdir(exist_ok=True)
     if cached.exists():return json.loads(cached.read_text(encoding='utf-8'))
-    # All 3 targets for each origin must be known at the selection cutoff.
-    origins=[o for o in [cutoff-6,cutoff-3] if o>=11]
-    vals={o:candidates(d,metric,o) for o in origins}
-    policy,_=select_recipes(d,metric,origins,vals)
-    for row in policy.values():
-        row['basis']='انتخاب روی مبدأها و افق‌های تاریخی یکسان؛ WAPE مکان و محصول در سطح مکانی انتخاب‌شده'
+    origins,holdout=_selection_origins(d,cutoff,strategy)
+    by_origin={o:candidates(d,metric,o) for o in origins}
+    policy,_=select_recipes(d,metric,origins,by_origin)
+    policy['_selection_origins']=[d.months[o] for o in origins]
+    policy['_strategy']=strategy
+    policy['_hierarchy']={'dimensions':category_dimensions(d),'overrides':{},
+                          'groups_considered':0,'groups_selected':0}
+    policy['_holdout']=None
+    if holdout is not None:
+        hierarchy=select_category_overrides(d,metric,origins,by_origin,policy)
+        policy['_hierarchy']=hierarchy
+        # Independent audit is REPORT-ONLY: never gate or tune policies on it.
+        held=candidates(d,metric,holdout)
+        policy['_holdout']=holdout_comparison(d,metric,holdout,held,policy,hierarchy)
+    for h in ('1','2','3'):
+        policy[h]['basis']='انتخاب تاریخی Global و در صورت شواهد پایدار، Recipe اختصاصی گروه؛ بدون آموزش جداگانه CatBoost برای هر SKU'
     cached.write_text(json.dumps(policy,ensure_ascii=False,indent=2),encoding='utf-8')
     return policy
 
-def automatic_forecast(d,metric,horizon,cutoff=None):
+
+def automatic_forecast(d,metric,horizon,cutoff=None,strategy='hierarchical'):
     cutoff=len(d.months)-1 if cutoff is None else cutoff
+    if strategy not in ('hierarchical','global'):
+        raise ValueError('روش انتخاب مدل نامعتبر است.')
     if metric=='value_1000_toman':
         guarded,guard=guarded_money(d,cutoff)
         if guarded is not None:
-            return guarded[:,horizon-1],{'name':'robust price-shift forecast','basis':'تغییر غیرمعمول ارزش واحد؛ حفظ سطح جدید و روند میانهٔ ماه‌های قبل',
-                                       'validation_wape':None,'price_guard':guard}
+            return guarded[:,horizon-1],{'name':'robust price-shift forecast',
+                    'basis':'جهش غیرمعمول ارزش واحد؛ استفاده از قاعده محافظ فروش ریالی',
+                    'validation_wape':None,'price_guard':guard,
+                    'category_selection':{'strategy':strategy,'active':False,
+                                          'reason':'Price-shift safety override'}}
     if cutoff+1<18:
-        method='Mean 2' if metric=='volume_kg' and horizon==1 else ('Damped trend' if metric!='volume_kg' and cutoff+1>=6 else 'Last month')
+        method='Mean 2' if metric=='volume_kg' and horizon==1 else (
+            'Damped trend' if metric!='volume_kg' and cutoff+1>=6 else 'Last month')
         history=d.metric(metric)[:,:cutoff+1]
-        return baseline(history,method,horizon),{'name':method,'basis':'تاریخچه برای آموزش مدل کامل کوتاه است؛ برآورد پایه','validation_wape':None}
-    policy=dataset_policy(d,metric,cutoff)[str(horizon)]
-    prediction=sum(weight*forecast_component(d,metric,cutoff,name)[:,horizon-1] for name,weight in policy['components'])
-    return prediction,policy
+        return baseline(history,method,horizon),{'name':method,
+                'basis':'تاریخچه برای آموزش مدل کامل کوتاه است؛ برآورد پایه',
+                'validation_wape':None,
+                'category_selection':{'strategy':strategy,'active':False,
+                                      'reason':'Insufficient history'}}
+    policy=dataset_policy(d,metric,cutoff,strategy)
+    selected=policy[str(horizon)]
+    hierarchy=policy['_hierarchy']
+    recipes=series_recipes(d,selected,hierarchy,horizon) if strategy=='hierarchical' else [selected]*len(d.meta)
+    unique={r['name']:r for r in recipes}
+    # The same global candidates are used for all category branches.
+    necessary={component for item in unique.values() for component,_ in item['components']}
+    predictions={name:forecast_component(d,metric,cutoff,name) for name in necessary}
+    output,usage,_=forecast_with_recipes(d,horizon,predictions,selected,hierarchy,strategy)
+    recipe=dict(selected)
+    recipe['category_selection']={
+        'strategy':strategy,'active':bool(hierarchy.get('overrides',{}).get(str(horizon))) and strategy=='hierarchical',
+        'dimensions':hierarchy.get('dimensions',[]),
+        'groups_considered':hierarchy.get('groups_considered',0),
+        'groups_selected':len(hierarchy.get('overrides',{}).get(str(horizon),[])),
+        'global_recipe':selected['name'],'usage':usage,
+        'selection_origins':policy['_selection_origins'],
+        'holdout':(policy['_holdout'] or {}).get('horizons',{}).get(str(horizon)),
+        'holdout_origin':(policy['_holdout'] or {}).get('origin'),
+        'holdout_is_independent':bool(policy['_holdout']),
+    }
+    return output,recipe
+
+
+def _selected_category_explanation(d,metric,horizon,mask,strategy,recipe):
+    """Small, filter-specific metadata; group scores are never labeled SKU scores."""
+    summary=recipe.get('category_selection')
+    if not summary or not summary.get('dimensions'):
+        return summary
+    if strategy=='global':
+        return summary
+    policy=dataset_policy(d,metric,len(d.months)-1,strategy)
+    rows=series_recipes(d,policy[str(horizon)],policy['_hierarchy'],horizon)
+    selected={}
+    for i in np.flatnonzero(mask):
+        item=rows[int(i)]
+        key=(item['name'],tuple(item.get('path',[])))
+        if key not in selected:
+            selected[key]={'recipe':item['name'],'path':item.get('path',[]),
+                           'source':'Category' if item.get('path') else 'Global / inherited',
+                           'series':0,'group_selection_metrics':item.get('evidence',{})}
+        selected[key]['series']+=1
+    return {**summary,'selected_groups':sorted(selected.values(),
+        key=lambda entry:(-entry['series'],entry['recipe']))[:12],
+            'selected_groups_total':len(selected),
+            'note':'Category metrics are measured on selection origins at category scope, not on this filtered SKU.'}
 
 def future_request(d,request):
     if len(d.months)<2:raise ValueError('دست‌کم دو ماه کامل لازم است.')
@@ -339,7 +423,9 @@ def future_request(d,request):
     d=d.for_market(request.get('filters',{}).get('Market'))
     mask=d.mask(request.get('filters',{}))
     if not mask.any():raise ValueError('ترکیب انتخاب‌شده در فایل موجود نیست.')
-    cells,recipe=automatic_forecast(d,metric,horizon)
+    strategy=request.get('strategy','hierarchical')
+    cells,recipe=automatic_forecast(d,metric,horizon,strategy=strategy)
+    category_summary=_selected_category_explanation(d,metric,horizon,mask,strategy,recipe)
     target=str(pd.Period(d.months[-1],freq='M')+horizon*d.period_months)
     history=[{'month':d.months[j],'value':float(d.metric(metric)[mask,j].sum())} for j in range(max(0,len(d.months)-12),len(d.months))]
     benchmark=None;selected_benchmark=None
@@ -363,6 +449,7 @@ def future_request(d,request):
             'absolute_error_if_known':None,'rows':int(mask.sum()),'history':history,'filters':request.get('filters',{}),
             'selected_series_check':{'origins':0,'wape':None},'benchmark':benchmark,'selected_benchmark':selected_benchmark,
             'selection_evidence':recipe.get('selection_evidence'),
+            'category_selection':category_summary,
             'note':('تاریخچه برای آموزش مدل کامل کوتاه است و برآورد پایه ارائه شده است. ' if len(d.months)<18 else 'روش و طول تاریخچه با آزمون ماه‌های گذشته انتخاب و مدل با داده‌های موجود آموزش داده شد. ')+
                    'دوره مقصد در فایل ورودی وجود ندارد. عدد خطای مرجع، بازآزمایی مراحل توسعه است و تأیید مستقل آینده محسوب نمی‌شود. خطای تاریخی، تضمین خطای دوره آینده یا تک‌محصول نیست.'}
 
