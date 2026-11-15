@@ -213,7 +213,7 @@ def holdout_comparison(dataset, metric, holdout_origin, candidates_at_holdout,
         hierarchical_stats = _stats(actual, proposed)
         legacy_stats = _stats(actual, legacy_prediction)
         level_rows=compare_levels(dataset,actual,baseline,proposed,holdout_origin,
-                                  legacy=legacy_prediction)
+                                  legacy=legacy_prediction,include_series=False)
         branches = _groups(dataset, hierarchy.get('dimensions', [])[:1]) if hierarchy.get('dimensions') else {}
         improved = deteriorated = unchanged = 0
         for rows in branches.values():
