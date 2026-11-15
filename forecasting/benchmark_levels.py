@@ -49,12 +49,31 @@ def _levels(dataset, origin, include_series=True):
             yield categories[depth - 1], {k: np.asarray(v, dtype=int) for k, v in groups.items()}
     if 'Brand' in dimensions:
         groups = defaultdict(list)
+        brand_cols = ([dimensions.index('Company')] if 'Company' in dimensions else [])
+        brand_cols.append(dimensions.index('Brand'))
         for i, row in enumerate(meta):
-            name = str(row[dimensions.index('Brand')]).strip()
-            groups[name].append(i)
+            key = tuple(str(row[col]).strip() for col in brand_cols)
+            groups[' / '.join(key)].append(i)
         yield 'Brand', {k: np.asarray(v, dtype=int) for k,v in groups.items()}
-    # Each series is an observed product/location cell, NOT an inferred SKU ID.
     if include_series:
+        # A named SKU can repeat across locations. Aggregate those exact
+        # observed rows, using Company + Brand to disambiguate reused labels.
+        # Never invent a SKU identity from the row number. A row-level Series
+        # remains available independently when no explicit SKU is present.
+        sku_field = next((field for field in ('SKU', 'Element Description')
+                          if field in dimensions), None)
+        if sku_field is not None:
+            fields = [field for field in ('Company', 'Brand', sku_field)
+                      if field in dimensions]
+            cols = [dimensions.index(field) for field in fields]
+            groups = defaultdict(list)
+            for i, row in enumerate(meta):
+                identity = tuple(str(row[col]).strip() for col in cols)
+                if identity and identity[-1].casefold() not in PLACEHOLDER:
+                    groups[' / '.join(identity)].append(i)
+            if groups:
+                yield 'SKU', {k: np.asarray(v, dtype=int) for k, v in groups.items()}
+        # Each Series remains the original observed product/location cell.
         yield 'Series', {str(i): np.array([i]) for i in range(n)}
     recent = dataset.metric('volume_kg')[:, max(0, origin - 11):origin + 1]
     positive = (recent > 0).sum(axis=1)
