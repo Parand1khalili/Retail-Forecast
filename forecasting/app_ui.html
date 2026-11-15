@@ -690,6 +690,18 @@ function selectionEvidenceHtml(r){
   const runner=valid.find(x=>x.name!==winner),delta=runner&&rank===0?(runner.wape-valid[0].wape):null;
   const decision=e.selection_decision||r.calibration?.selection_decision;
   const guarded=decision?.mode==='guarded';
+  const rejected=Object.entries(e.rejected_candidates||{});
+  const rejectDetails=rejected.length
+    ?'<details class="model-details"><summary>'+persian(rejected.length)+' Candidate کنارگذاشته‌شده از مقایسه منصفانه</summary>'+
+       '<div class="details">'+rejected.slice(0,15).map(([name,reason])=>
+       '<div class="detail"><strong><bdi dir="ltr">'+escapeHtml(name)+'</bdi></strong><span>'+escapeHtml(reason)+'</span></div>').join('')+
+       (rejected.length>15?'<p>+'+persian(rejected.length-15)+' مورد دیگر</p>':'')+'</div></details>'
+    :'';
+  const guardInfo=guarded&&decision.guard
+    ?'<p class="help">قانون انتخاب: حداقل '+persian(Math.round(decision.guard.min_relative_improvement*100))+
+      '٪ کاهش خطای مطلق، بهبود پایدار در مبدأهای تاریخی و حداکثر '+percent(decision.guard.max_relative_origin_worsening)+
+      ' افت مجاز در هر مبدأ نسبت به Recipe مرجع.</p>'
+    :'';
   const explanation=guarded
     ?(decision.reason==='stable improvement'
        ?'این Recipe نسبت به مرجع آماری، کاهش خطای کافی و تکرارشونده در چند مبدأ نشان داده است.'
@@ -706,7 +718,7 @@ function selectionEvidenceHtml(r){
     '<div class="evidence-bars">'+entries+'</div><div class="evidence-caption">طول میله‌ها متناسب با خطاست؛ کوتاه‌تر بهتر است. نتایج از Validation واقعی به دست آمده‌اند.</div></div>'+
     '<div class="evidence-box"><h4>عملکرد Recipe منتخب در هر مبدأ</h4>'+detail+
     '<div class="evidence-caption">این WAPE برای تمام ترکیب‌های مکان و محصولِ سطح Market است، نه فقط محصول یا برند فیلترشده.</div></div></div>'+
-    '<div class="evidence-reason">'+escapeHtml(explanation)+'</div>'+
+    '<div class="evidence-reason">'+escapeHtml(explanation)+'</div>'+guardInfo+rejectDetails+
     '<div class="evidence-all"><details><summary>مشاهده جدول کامل '+persian(valid.length)+' روش و خطاهای آن‌ها</summary>'+
     '<div class="evidence-table-wrap"><table class="evidence-table"><thead><tr><th>رتبه</th><th>روش / Recipe</th><th>WAPE</th></tr></thead><tbody>'+table+'</tbody></table></div></details></div>'+
     '<p>این رتبه‌بندی برای <strong>همه سری‌های سطح مکانی انتخاب‌شده</strong> محاسبه شده است؛ نه فقط مکان یا برند فیلترشده در این درخواست. خطای تاریخی، تضمین دقت آینده نیست.</p></section>';
