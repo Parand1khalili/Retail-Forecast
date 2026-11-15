@@ -204,14 +204,13 @@ def scores(y,p):
     return {'wape':float(abs(y-p).sum()/den) if den else None,'bias':float((p-y).sum()/den) if den else None,'actual':float(den)}
 
 def select_recipes(d,metric,origins,by_origin,selection_mode='guarded'):
+    """Compare all candidates on completed common targets at identical origins.
+
+    Candidate training and feature construction end at each historical origin.
+    Guarded selection prefers stable gains; legacy reproduces pooled-WAPE ranking.
+    """
     if selection_mode not in ('guarded','legacy'):
         raise ValueError('Unknown model selection mode.')
-    """Compare every candidate on the same completed targets and city cells.
-
-    Models are trained only through their respective origin by candidates().
-    WAPE uses pooled absolute errors (not average per-origin percentages).
-    Blends use the best simple method on these same validation targets.
-    """
     if not origins:raise ValueError('At least one completed validation origin is required.')
     common=set.intersection(*(set(by_origin[o]) for o in origins))
     # Exclude invalid candidate recipes entirely, rather than letting NaN win.
