@@ -8,8 +8,8 @@ from runtime_preflight import diagnose, require_ready
 DEPENDENCIES = diagnose()
 if any(issue['package'] in ('numpy', 'pandas') for issue in DEPENDENCIES['failures']):
     # app_core needs these packages for even the import/upload UI.
-    print(DEPENDENCIES['message'], file=sys.stderr)
-    print(DEPENDENCIES['install_command'], file=sys.stderr)
+    print('EMRC Forecast: mandatory Python dependencies are unavailable.', file=sys.stderr)
+    print(DEPENDENCIES['install_command'].encode('ascii','backslashreplace').decode('ascii'),file=sys.stderr)
     raise SystemExit(2)
 
 from app_core import Dataset, predict, ROOT
@@ -204,9 +204,9 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__=='__main__':
     if not DEPENDENCIES['ready']:
-        print('WARNING: '+DEPENDENCIES['message'],flush=True)
-        print('Python: '+DEPENDENCIES['python_executable'],flush=True)
-        print('Install: '+DEPENDENCIES['install_command'],flush=True)
+        print('WARNING: EMRC Forecast's CatBoost engine is not available in this Python.',flush=True)
+        print(('Python: '+DEPENDENCIES['python_executable']).encode('ascii','backslashreplace').decode('ascii'),flush=True)
+        print(('Install: '+DEPENDENCIES['install_command']).encode('ascii','backslashreplace').decode('ascii'),flush=True)
     server=ThreadingHTTPServer((HOST,PORT),Handler)
     print(f'RA forecast: http://{HOST}:{PORT}',flush=True)
     server.serve_forever()
