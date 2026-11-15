@@ -58,6 +58,15 @@ class ProductionSelectorTests(unittest.TestCase):
         self.assertEqual(guarded['1']['selection_evidence']['selection_decision']['legacy_best'],
                          'ml|raw|all')
 
+    def test_incompatible_candidate_shape_never_enters_comparison(self):
+        origins=[23,26,29]
+        predictions=samples(origins,stable=True)
+        for data in predictions.values():
+            data['ml|raw|all']=np.zeros((2,2))
+        policy,_=auto_engine.select_recipes(self.data,'volume_kg',origins,predictions)
+        self.assertEqual(policy['1']['name'],'base|A')
+        self.assertEqual(policy['1']['selection_decision']['candidate_count'],1)
+
     def test_guard_accepts_consistent_global_improvement(self):
         origins=[23,26,29]
         guarded,_=auto_engine.select_recipes(self.data,'volume_kg',origins,
