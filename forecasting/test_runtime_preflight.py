@@ -48,6 +48,22 @@ class RuntimePreflightTests(unittest.TestCase):
         self.assertFalse(result['ready'])
         self.assertIn('CatBoostRegressor',result['failures'][0]['reason'])
 
+    def test_cli_is_ascii_json_under_windows_legacy_codepage(self):
+        import json
+        import os
+        from pathlib import Path
+        import subprocess
+        env = dict(os.environ, PYTHONIOENCODING='cp1252:strict')
+        process = subprocess.run(
+            [sys.executable, str(Path(__file__).with_name('runtime_preflight.py'))],
+            text=True, capture_output=True, env=env, timeout=45)
+        self.assertEqual(process.returncode, 0, process.stderr)
+        self.assertTrue(process.stdout.isascii())
+        output = json.loads(process.stdout)
+        self.assertTrue(output['ready'])
+        self.assertIn('catboost', output['packages'])
+        self.assertEqual(output['python_executable'], sys.executable)
+
     def test_uses_interpreter_not_a_global_pip_binary(self):
         cmd=install_command(executable='C:\\Python314\\python.exe',
                             requirements='H:\\Repo (backup)\\forecasting\\requirements.txt')
