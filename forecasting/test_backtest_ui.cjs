@@ -86,36 +86,61 @@ const noHoldout = {...fake, summaries:[
 const result = runWithData(noHoldout);
 assert.match(result.nodes.results.innerHTML,/Holdout کافی نیست/);
 assert.match(result.nodes.labGroupTable.innerHTML,/دادهٔ Holdout موجود نیست/);
-// The active interpreter's dependency status must be visible before Forecast runs.
-const runtimeStart = html.indexOf('function showRuntimeStatus(health){');
+// Check actual preflight renderer against ready, missing deps, stale backend and
+// unavailable /api/health; never prescribe pip for a stale server.
+const runtimeStart = html.indexOf('function showRuntimeStatus(health,requestError=');
 const runtimeEnd = html.indexOf('function updateWizard(){',runtimeStart);
 assert.ok(runtimeStart >= 0 && runtimeEnd > runtimeStart);
-const runtimeNodes = Object.fromEntries(['runtimeAlert','runtimeProblem','runtimeCommand']
-  .map(key => [key,{hidden:true,textContent:''}]));
+const runtimeNodes = Object.fromEntries(
+  ['runtimeAlert','runtimeTitle','runtimeProblem','runtimeCommand','runtimeHint']
+    .map(key => [key,{hidden:true,textContent:''}])
+);
 let wizardChecks = 0, runtimeError = '';
 const runtimeSandbox = {
   engineReady:false,
-  el:id=>runtimeNodes[id],
+  el:id=>{ assert.ok(runtimeNodes[id], 'Unknown runtime node '+id);return runtimeNodes[id]; },
   updateWizard:()=>{wizardChecks++;},
   status:msg=>{runtimeError=msg;},
 };
 vm.createContext(runtimeSandbox);
 vm.runInContext(html.slice(runtimeStart,runtimeEnd),runtimeSandbox);
-runtimeSandbox.showRuntimeStatus({ready:false,runtime:{dependencies:{
+
+runtimeSandbox.showRuntimeStatus({service:'ra-forecast',ready:false,runtime:{dependencies:{
   ready:false,
   python_executable:'C:\\My Project\\.venv\\Scripts\\python.exe',
   failures:[{package:'catboost',reason:"No module named 'catboost'"}],
   install_command:'python -m pip install -r requirements.txt'
 }}});
 assert.equal(runtimeNodes.runtimeAlert.hidden,false);
+assert.match(runtimeNodes.runtimeTitle.textContent,/پکیج‌های موتور/);
 assert.match(runtimeNodes.runtimeProblem.textContent,/catboost/);
 assert.match(runtimeNodes.runtimeProblem.textContent,/My Project/);
 assert.match(runtimeNodes.runtimeCommand.textContent,/pip install -r/);
-assert.match(runtimeError,/غیرفعال/);
-runtimeSandbox.showRuntimeStatus({ready:true,runtime:{dependencies:{ready:true}}});
+assert.match(runtimeError,/پکیج‌های موتور/);
+
+runtimeSandbox.showRuntimeStatus({service:'ra-forecast',ready:true,runtime:{
+  root:'H:\\project',python:'C:\\old-python\\python.exe',
+  paths:{'app.py':'H:\\old-project\\forecasting\\app.py'}
+}});
+assert.equal(runtimeNodes.runtimeAlert.hidden,false);
+assert.match(runtimeNodes.runtimeTitle.textContent,/نسخه سرور/);
+assert.match(runtimeNodes.runtimeProblem.textContent,/old-project/);
+assert.match(runtimeNodes.runtimeCommand.textContent,/Get-NetTCPConnection/);
+assert.ok(!runtimeNodes.runtimeCommand.textContent.includes('pip install'),
+          'A stale backend must not be misdiagnosed as missing CatBoost');
+assert.match(runtimeNodes.runtimeHint.textContent,/Ctrl\+C/);
+
+runtimeSandbox.showRuntimeStatus(null,'HTTP 404');
+assert.match(runtimeNodes.runtimeTitle.textContent,/اتصال به API/);
+assert.match(runtimeNodes.runtimeProblem.textContent,/HTTP 404/);
+assert.ok(!runtimeNodes.runtimeCommand.textContent.includes('pip install'));
+
+runtimeSandbox.showRuntimeStatus({service:'ra-forecast',ready:true,runtime:{
+  dependencies:{ready:true,python_executable:'C:\\Python314\\python.exe'}
+}});
 assert.equal(runtimeSandbox.engineReady,true);
 assert.equal(runtimeNodes.runtimeAlert.hidden,true);
-assert.equal(wizardChecks,2);
-console.log('Runtime dependency preflight UI and error guidance: PASS');
+assert.equal(wizardChecks,4);
+console.log('Runtime dependency, stale-server, failed-health and ready-state UI: PASS');
 
 console.log('Model Lab UI rendering, filters, zero-demand N/A and escaping: PASS');
