@@ -819,6 +819,127 @@ function categorySelectionHtml(r){
     rows+selectedScore+holdout+levelRows+'</div>'+
     '<p class="help">WAPE گروه برای کل گروه محاسبه می‌شود. اگر SKU یا برند را فیلتر کرده‌اید، این عدد WAPE اختصاصی آن SKU نیست؛ برای تقاضای صفر، درصد خطا ممکن است تعریف‌نشده باشد.</p></section>';
 }
+
+function labMetricName(metric){
+  return metric==='volume_kg'?'فروش حجمی':'ارزش فروش';
+}
+function labNumber(value){
+  return value===null||value===undefined||value===''||!Number.isFinite(Number(value))
+    ?'N/A':new Intl.NumberFormat('fa-IR',{maximumFractionDigits:2}).format(Number(value));
+}
+function labPercent(value){
+  return value===null||value===undefined||value===''||!Number.isFinite(Number(value))
+    ?'N/A':percent(Number(value));
+}
+function labGroupLevels(){
+  if(!latestLabData)return;
+  const metric=el('labMetricView').value,horizon=Number(el('labHorizonView').value);
+  const levels=latestLabData.group_totals.filter(item=>item.metric===metric&&item.horizon===horizon)
+    .map(item=>item.level).filter(name=>name!=='Series');
+  const old=el('labLevelView').value;
+  choice(el('labLevelView'),levels.map(name=>[name,name]),levels.includes(old)?old:(levels[0]||''));
+  labGroupRows();
+}
+function labGroupRows(){
+  if(!latestLabData)return;
+  const metric=el('labMetricView').value,horizon=Number(el('labHorizonView').value);
+  const level=el('labLevelView').value;
+  const group=latestLabData.group_totals.find(item=>item.metric===metric&&item.horizon===horizon&&item.level===level);
+  const rows=latestLabData.group_preview.filter(item=>item.metric===metric&&Number(item.horizon)===horizon&&item.level===level);
+  el('labGroupCount').textContent=group?
+    persian(group.groups)+' گروه · '+persian(group.improved)+' بهتر · '+persian(group.deteriorated)+
+    ' بدتر · '+persian(group.unchanged)+' بدون تغییر، نسبت به Legacy Global':'گروهی برای این انتخاب موجود نیست.';
+  if(!rows.length){
+    el('labGroupTable').innerHTML='<div class="lab-empty">برای این سطح دادهٔ Holdout موجود نیست. در صورت کافی‌بودن تاریخچه، گروه‌ها در فایل CSV دانلودی هم ارائه می‌شوند.</div>';
+    return;
+  }
+  const body=rows.map(row=>
+    '<tr><td>'+escapeHtml(row.group)+'</td><td>'+labNumber(row.series)+'</td>'+
+    '<td>'+labNumber(row.actual)+'</td><td>'+labPercent(row.legacy_global_wape)+'</td>'+
+    '<td>'+labPercent(row.global_wape)+'</td><td>'+labPercent(row.hierarchical_wape)+'</td>'+
+    '<td>'+labPercent(row.relative_reduction_vs_legacy)+'</td></tr>'
+  ).join('');
+  el('labGroupTable').innerHTML='<div class="lab-table-wrap"><table class="lab-table">'+
+    '<thead><tr><th>گروه</th><th>سری‌ها</th><th>مجموع واقعی</th><th>WAPE قبلی</th>'+
+    '<th>WAPE Global محافظه‌کار</th><th>WAPE چندسطحی</th><th>کاهش خطای مطلق نسبت به قبلی</th></tr></thead>'+
+    '<tbody>'+body+'</tbody></table></div>';
+}
+function renderBacktest(result){
+  latestLabData=result;
+  const metrics=result.metrics||[],rows=result.summaries||[];
+  const completed=rows.filter(item=>item.audit_type==='untouched_holdout');
+  const total=completed.length;
+  const tableRows=rows.map(item=>{
+    const available=item.audit_type==='untouched_holdout';
+    return '<tr><td>'+escapeHtml(labMetricName(item.metric))+'</td>'+
+      '<td>H'+escapeHtml(item.horizon)+'</td>'+
+      '<td>'+ (available?labPercent(item.legacy_global_wape):'—')+'</td>'+
+      '<td>'+ (available?labPercent(item.global_wape):'—')+'</td>'+
+      '<td>'+ (available?labPercent(item.hierarchical_wape):'—')+'</td>'+
+      '<td>'+ (available?labPercent(item.relative_reduction_vs_legacy):'—')+'</td>'+
+      '<td>'+ (available?escapeHtml(item.origin):'بدون Holdout مستقل')+'</td></tr>';
+  }).join('');
+  const charts=metrics.map(metric=>{
+    const valid=completed.filter(item=>item.metric===metric);
+    return '<section class="evidence"><h3>'+escapeHtml(labMetricName(metric))+'</h3>'+
+      (valid.length?valid.map(item=>{
+        const values=[{name:'Legacy Global',value:item.legacy_global_wape,style:'legacy'},
+          {name:'Guarded Global',value:item.global_wape,style:'guarded'},
+          {name:'Hierarchical',value:item.hierarchical_wape,style:'hierarchical'}];
+        const finite=values.map(item=>Number(item.value)).filter((v,i)=>values[i].value!==null&&Number.isFinite(v));
+        const largest=Math.max(1e-9,...finite);
+        const lines=values.map(p=>{
+          const validScore=p.value!==null&&Number.isFinite(Number(p.value));
+          const width=validScore?Math.max(1,Math.min(100,100*Number(p.value)/largest)):0;
+          return '<div class="lab-barline '+p.style+'"><span>'+escapeHtml(p.name)+'</span>'+
+            '<div class="lab-barbg"><span class="lab-barfill" style="width:'+width.toFixed(2)+'%"></span></div>'+
+            '<span>'+labPercent(p.value)+'</span></div>';
+        }).join('');
+        return '<div class="lab-horizon"><h4>افق H'+escapeHtml(item.horizon)+
+          ' · مبدأ آزمون: <bdi dir="ltr">'+escapeHtml(item.origin)+'</bdi></h4>'+
+          '<div class="lab-bars">'+lines+'</div></div>';
+      }).join(''):'<div class="lab-empty">این داده تاریخچه کافی برای Holdout مستقل ندارد؛ نتیجه‌ای به‌عنوان دقت مستقل گزارش نمی‌شود.</div>')+
+      '</section>';
+  }).join('');
+  el('results').innerHTML='<div class="resulthead"><div>'+
+    '<div class="eyebrow">EMRC · MODEL LAB</div><h2>مقایسه تاریخی Recipeها</h2>'+
+    '<div class="source">'+escapeHtml(result.source)+' · Market: '+escapeHtml(result.market)+
+    ' · '+(result.periodicity==='bimonthly'?'دوماهه':'ماهانه')+'</div></div>'+
+    '<span class="badge">'+(total?'ارزیابی مستقل انجام شد':'Holdout کافی نیست')+'</span></div>'+
+    '<div class="lab-meta"><span>'+persian(result.series)+' سری</span>'+
+    '<span>'+persian(result.periods)+' دوره تاریخی</span>'+
+    '<span>'+persian(metrics.length)+' شاخص</span><span>افق‌های H1 / H2 / H3</span></div>'+
+    '<div class="model-lab-intro"><strong>این جدول چه چیزی را مقایسه می‌کند؟</strong>'+
+    '<p>سه سیاست، روی اهداف تاریخی یکسان و بدون استفاده از Holdout برای انتخاب Recipe مقایسه شده‌اند. '+
+    'WAPE از مجموع قدرمطلق خطای سری‌های واقعی محاسبه می‌شود، نه از اختلاف مجموع کل فروش. '+
+    'نتیجه این آزمون فقط شواهد عملکرد تاریخی است؛ به‌طور خودکار Recipe آینده را بر اساس Holdout تغییر نمی‌دهد.</p></div>'+
+    '<section class="evidence"><h3>خلاصه مقایسه روی Holdout مستقل</h3>'+
+    '<div class="lab-table-wrap"><table class="lab-table"><thead><tr>'+
+    '<th>شاخص</th><th>افق</th><th>Legacy Global</th><th>Guarded Global</th>'+
+    '<th>Hierarchical</th><th>تغییر نسبت به Legacy</th><th>مبدأ آزمون</th>'+
+    '</tr></thead><tbody>'+tableRows+'</tbody></table></div>'+
+    '<p class="lab-note">مقدار مثبت «کاهش خطای مطلق» نشان‌دهنده بهبود است؛ مقدار منفی یعنی افت عملکرد. '+
+    'اگر فروش واقعی صفر باشد WAPE به‌جای صفر ساختگی با N/A مشخص می‌شود.</p></section>'+
+    charts+
+    '<section class="evidence"><h3>عملکرد دسته‌بندی‌ها، برندها و SKUها</h3>'+
+    '<p class="lab-note">گروه‌ها بر اساس مجموع فروش واقعی مرتب شده‌اند؛ این جدول فقط '+persian(result.preview_limit)+
+    ' گروه بزرگ هر سطح را نشان می‌دهد. تمام گروه‌ها و سری‌های منفرد داخل CSV گزارش کامل قابل دانلود هستند.</p>'+
+    '<div class="lab-filterbar"><div class="field"><label for="labMetricView">شاخص</label><select id="labMetricView">'+
+    metrics.map(metric=>'<option value="'+escapeHtml(metric)+'">'+escapeHtml(labMetricName(metric))+'</option>').join('')+
+    '</select></div><div class="field"><label for="labHorizonView">افق</label><select id="labHorizonView">'+
+    [1,2,3].map(h=>'<option value="'+h+'">H'+h+'</option>').join('')+
+    '</select></div><div class="field"><label for="labLevelView">سطح تحلیل</label>'+
+    '<select id="labLevelView"></select></div></div>'+
+    '<p class="lab-note" id="labGroupCount" aria-live="polite"></p>'+
+    '<div id="labGroupTable"></div></section>'+
+    '<div class="lab-note">Market و سطح تجمیع انتخاب‌شده مرجع این آزمون هستند. فیلترهای Brand و SKU '+
+    'برای انتخاب Recipe عمومیِ آزمون اعمال نمی‌شوند. در داده کوتاه‌تر از حد لازم، هیچ ادعای بهبود مستقل ثبت نمی‌شود.</div>';
+  el('labMetricView').onchange=labGroupLevels;
+  el('labHorizonView').onchange=labGroupLevels;
+  el('labLevelView').onchange=labGroupRows;
+  labGroupLevels();
+}
+
 function renderFuture(r){
   const unit=escapeHtml(r.unit),calibration=r.calibration?.validation_wape;
   const selectionScore=typeof calibration==='number'&&Number.isFinite(calibration)?calibration:null;
@@ -884,6 +1005,59 @@ el('exportFull').onclick=async()=>{
   }catch(e){
     status('دانلود Excel کامل انجام نشد: '+e.message,true);
   }finally{lockButtons(false)}
+};
+el('runBacktest').onclick=async()=>{
+  if(!data||busy||schemaNeedsReview)return;
+  const filters=selectedFilters();
+  const mode=el('backtestMetric').value;
+  const metrics=mode==='both'?['volume_kg','value_1000_toman']:[mode];
+  let timer=null,begin=Date.now();
+  try{
+    lockButtons(true);
+    status('در حال آموزش و مقایسه مدل‌ها روی داده‌های تاریخی؛ این آزمون ممکن است از پیش‌بینی عادی طولانی‌تر باشد.','working');
+    timer=setInterval(()=>status('در حال اجرای Rolling Backtest و آزمون مستقل… '+persian(Math.floor((Date.now()-begin)/1000))+' ثانیه','working'),1000);
+    const result=await post('/api/backtest',{
+      market:filters.Market||null,
+      grain:filters['Element Caption']||filters.ElementCaption||null,
+      metrics:metrics
+    });
+    renderBacktest(result);
+    el('downloadBacktest').hidden=false;
+    el('exportFull').hidden=true;
+    resultReady=true;
+    showStage(4,true);
+    status(result.holdout_available
+      ?'آزمون مستقل تکمیل شد. مقایسه سه روش، گروه‌ها و دانلود گزارش آماده است.'
+      :'محاسبه انجام شد اما تاریخچه برای آزمون مستقل کافی نیست؛ فایل خلاصه قابل دانلود است.','success');
+  }catch(e){
+    resultReady=false;
+    el('downloadBacktest').hidden=true;
+    latestLabData=null;
+    status('اجرای آزمون مدل‌ها موفق نبود: '+e.message,true);
+  }finally{
+    if(timer!==null)clearInterval(timer);
+    lockButtons(false);
+  }
+};
+el('downloadBacktest').onclick=async()=>{
+  if(!latestLabData||busy)return;
+  try{
+    lockButtons(true);
+    status('در حال دریافت گزارش‌های کامل CSV…','working');
+    const response=await fetch('/api/backtest/report');
+    if(!response.ok){
+      let message='گزارش قابل دریافت نیست.';
+      try{message=(await response.json()).error||message}catch(_){}
+      throw Error(message);
+    }
+    const blob=await response.blob(),url=URL.createObjectURL(blob);
+    const anchor=document.createElement('a');
+    anchor.href=url;anchor.download='emrc_model_backtest.zip';
+    document.body.append(anchor);anchor.click();anchor.remove();
+    URL.revokeObjectURL(url);
+    status('فایل ZIP شامل CSV خلاصه و CSV جزئیات سطوح محصول آماده شد.','success');
+  }catch(e){status('دریافت گزارش ناموفق بود: '+e.message,true)}
+  finally{lockButtons(false)}
 };
 el('run').onclick=async()=>{
   if(!data||busy||schemaNeedsReview)return;
