@@ -91,11 +91,17 @@ def compare_levels(dataset, actual, reference, challenger, origin, legacy=None,
                 'hierarchical_predicted': proposed['predicted'],
                 'global_wape': ref['wape'], 'hierarchical_wape': proposed['wape'],
                 'legacy_global_wape': previous['wape'],
+                'legacy_global_predicted': previous['predicted'],
+                'legacy_global_mae': previous['mae'],
+                'legacy_global_bias': previous['bias'],
                 'global_mae': ref['mae'], 'hierarchical_mae': proposed['mae'],
                 'global_bias': ref['bias'], 'hierarchical_bias': proposed['bias'],
                 'global_absolute_error': baseline_error,
                 'hierarchical_absolute_error': proposed['absolute_error'],
                 'legacy_absolute_error': previous['absolute_error'],
+                'relative_reduction_vs_legacy': (
+                    (previous['absolute_error']-proposed['absolute_error']) /
+                    previous['absolute_error'] if previous['absolute_error']>0 else None),
                 'relative_error_reduction': ((baseline_error - proposed['absolute_error']) / baseline_error
                                              if baseline_error > 0 else None),
                 'aggregated_global_wape': (abs(ref['predicted'] - ref['actual']) / ref['actual']
@@ -103,6 +109,10 @@ def compare_levels(dataset, actual, reference, challenger, origin, legacy=None,
                 'aggregated_hierarchical_wape': (abs(proposed['predicted'] - proposed['actual']) / proposed['actual']
                                                  if proposed['actual'] > 0 else None),
                 'zero_actual_cells': proposed['zero_actual_cells'],
+                'improvement_vs_legacy': (
+                    'improved' if proposed['absolute_error'] < previous['absolute_error']-1e-9
+                    else 'deteriorated' if proposed['absolute_error'] > previous['absolute_error']+1e-9
+                    else 'unchanged'),
                 'improvement': ('improved' if proposed['absolute_error'] < baseline_error - 1e-9 else
                                 'deteriorated' if proposed['absolute_error'] > baseline_error + 1e-9 else 'unchanged')
             })
@@ -120,6 +130,9 @@ def summarize_levels(rows):
         'deteriorated': sum(r['improvement'] == 'deteriorated' for r in group),
         'unchanged': sum(r['improvement'] == 'unchanged' for r in group),
         'undefined_wape_groups': sum(r['hierarchical_wape'] is None for r in group),
+        'improved_vs_legacy': sum(r['improvement_vs_legacy']=='improved' for r in group),
+        'deteriorated_vs_legacy': sum(r['improvement_vs_legacy']=='deteriorated' for r in group),
+        'unchanged_vs_legacy': sum(r['improvement_vs_legacy']=='unchanged' for r in group),
         'group_aggregate_absolute_error': sum(
             abs(r['hierarchical_predicted'] - r['actual']) for r in group),
         'series_level_absolute_error': sum(r['hierarchical_absolute_error'] for r in group),
