@@ -1,12 +1,46 @@
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+# Prefer a usable local environment, but never silently launch an environment
+# where CatBoost cannot be imported. The launcher picks the SAME interpreter
+# that passed the dependency import check.
 $pythonCandidates = @(
     (Join-Path $projectRoot '.venv\Scripts\python.exe'),
-    (Join-Path $projectRoot 'venv\Scripts\python.exe'),
-    (Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe')
+    (Join-Path $projectRoot 'venv\Scripts\python.exe')
 )
-$pythonExe = $pythonCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-if (-not $pythonExe) { $pythonExe = (Get-Command python -ErrorAction Stop).Source }
+$activePython = Get-Command python -ErrorAction SilentlyContinue
+if ($activePython) { $pythonCandidates += $activePython.Source }
+$pyLauncher = Get-Command py -ErrorAction SilentlyContinue
+if ($pyLauncher) {
+    $pythonFromLauncher = & $pyLauncher.Source -3 -c 'import sys; print(sys.executable)' 2>$null
+    if ($LASTEXITCODE -eq 0 -and $pythonFromLauncher) {
+        $pythonCandidates += (($pythonFromLauncher | Select-Object -Last 1).Trim())
+    }
+}
+$preflightPath = Join-Path $projectRoot 'forecasting\runtime_preflight.py'
+$pythonExe = $null
+$firstProblem = $null
+foreach ($candidate in ($pythonCandidates | Select-Object -Unique)) {
+    if (-not (Test-Path -LiteralPath $candidate)) { continue }
+    $raw = & $candidate -B $preflightPath 2>$null
+    if (-not $raw) { continue }
+    try { $diagnosis = ($raw | Out-String | ConvertFrom-Json) }
+    catch { continue }
+    if ($diagnosis.ready) {
+        $pythonExe = $candidate
+        break
+    }
+    if (-not $firstProblem) { $firstProblem = $diagnosis }
+}
+if (-not $pythonExe) {
+    if ($firstProblem) {
+        Write-Host ('Python: ' + $firstProblem.python_executable)
+        Write-Host ('Dependency error: ' + ($firstProblem.failures | ConvertTo-Json -Compress))
+        Write-Host ('Install dependencies using this EXACT interpreter:')
+        Write-Host $firstProblem.install_command
+    }
+    throw 'No Python installation with working NumPy, Pandas and CatBoost found. Install requirements into the chosen Python and retry.'
+}
+Write-Host ('EMRC Forecast Python: ' + $pythonExe)
 $expected = (& $pythonExe -B (Join-Path $projectRoot 'forecasting\runtime_identity.py')) | ConvertFrom-Json
 function Read-Health {
     try { Invoke-RestMethod 'http://127.0.0.1:8765/api/health' -TimeoutSec 2 } catch { $null }
