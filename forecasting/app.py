@@ -2,13 +2,23 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, unquote, parse_qs
-import json, threading, uuid, time, zipfile, os
+import json, threading, uuid, time, zipfile, os, sys
+from runtime_preflight import diagnose, require_ready
+
+DEPENDENCIES = diagnose()
+if any(issue['package'] in ('numpy', 'pandas') for issue in DEPENDENCIES['failures']):
+    # app_core needs these packages for even the import/upload UI.
+    print(DEPENDENCIES['message'], file=sys.stderr)
+    print(DEPENDENCIES['install_command'], file=sys.stderr)
+    raise SystemExit(2)
+
 from app_core import Dataset, predict, ROOT
 from schema import SchemaError
 from runtime_identity import identity
 
 RUNTIME = identity()
 RUNTIME['pid'] = os.getpid()
+RUNTIME['dependencies'] = DEPENDENCIES
 RUNTIME['paths'].update({'app.py': str(Path(__file__).resolve()),
                         'app_core.py': str(__import__('app_core').__file__),
                         'schema.py': str(__import__('schema').__file__)})
@@ -59,7 +69,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path=urlparse(self.path).path
         if path=='/api/health':
-            self.answer({'service':'ra-forecast','ready':True,'runtime':RUNTIME});return
+            self.answer({'service':'ra-forecast','ready':DEPENDENCIES['ready'],'runtime':RUNTIME});return
         if path=='/api/backtest/report':
             with lock: archive=state.get('benchmark_zip')
             if archive is None:
@@ -74,6 +84,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(archive[start:start+1024*1024])
             return
         if path=='/api/export/full':
+            if not DEPENDENCIES['ready']:
+                self.answer({'error':DEPENDENCIES['message'],'dependency_check':DEPENDENCIES},503);return
             import tempfile
             strategy=parse_qs(urlparse(self.path).query).get('strategy',['hierarchical'])[0]
             if strategy not in ('hierarchical','global'):
@@ -156,6 +168,8 @@ class Handler(BaseHTTPRequestHandler):
                     state['benchmark_zip']=None
                 self.answer(dataset.options());return
             if path=='/api/backtest':
+                if not DEPENDENCIES['ready']:
+                    self.answer({'error':DEPENDENCIES['message'],'dependency_check':DEPENDENCIES},503);return
                 from backtest_lab import run_backtest
                 with lock: dataset=state['dataset']
                 if dataset is None:
@@ -173,6 +187,8 @@ class Handler(BaseHTTPRequestHandler):
                 with lock:dataset=state['dataset']
                 self.answer(predict(dataset,body));return
             if path=='/api/predict':
+                if not DEPENDENCIES['ready']:
+                    self.answer({'error':DEPENDENCIES['message'],'dependency_check':DEPENDENCIES},503);return
                 from auto_engine import future_request
                 with lock:dataset=state['dataset']
                 if dataset is None:raise ValueError('ابتدا یک فایل مستر بارگذاری کنید.')
@@ -187,6 +203,10 @@ class Handler(BaseHTTPRequestHandler):
             self.answer({'error':str(e)},400)
 
 if __name__=='__main__':
+    if not DEPENDENCIES['ready']:
+        print('WARNING: '+DEPENDENCIES['message'],flush=True)
+        print('Python: '+DEPENDENCIES['python_executable'],flush=True)
+        print('Install: '+DEPENDENCIES['install_command'],flush=True)
     server=ThreadingHTTPServer((HOST,PORT),Handler)
     print(f'RA forecast: http://{HOST}:{PORT}',flush=True)
     server.serve_forever()
