@@ -240,6 +240,30 @@ input[type=text]:focus,select:focus{border-color:var(--focus)}
 .model-details>summary{cursor:pointer;color:var(--navy);font-size:13px;font-weight:650;padding:6px 0}
 .model-details[open]>summary{margin-bottom:8px}
 .model-details .recipe{margin-top:2px}
+
+.model-lab-intro{padding:12px 15px;background:#f8fafc;border:1px solid var(--line);border-radius:8px;margin:14px 0}
+.model-lab-intro strong{display:block;margin-bottom:4px}
+.model-lab-intro p{color:var(--muted);font-size:12px;line-height:1.8}
+.lab-table-wrap{max-width:100%;overflow-x:auto;border:1px solid var(--line);border-radius:8px;margin:12px 0}
+.lab-table{width:100%;border-collapse:collapse;min-width:730px;text-align:right;font-size:12px}
+.lab-table th{background:#f5f7fa;color:#44546a;font-weight:700;white-space:nowrap}
+.lab-table th,.lab-table td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+.lab-table tbody tr:last-child td{border-bottom:none}
+.lab-table tbody tr:hover{background:#fafbfc}
+.lab-filterbar{display:flex;flex-wrap:wrap;gap:12px;align-items:end;margin:15px 0 8px}
+.lab-filterbar .field{flex:1 1 170px;margin:0}
+.lab-horizon{border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin:9px 0}
+.lab-horizon h4{margin-bottom:9px}
+.lab-bars{display:grid;gap:7px}
+.lab-barline{display:grid;grid-template-columns:145px minmax(0,1fr) 75px;align-items:center;gap:12px;font-size:12px}
+.lab-barbg{background:#edf1f5;border-radius:4px;height:8px;overflow:hidden}
+.lab-barfill{display:block;height:100%;background:var(--navy);border-radius:4px}
+.lab-barline.guarded .lab-barfill{background:var(--plum)}
+.lab-barline.hierarchical .lab-barfill{background:var(--rose)}
+.lab-note{color:var(--muted);font-size:12px;line-height:1.85;margin-top:10px}
+.lab-meta{display:flex;flex-wrap:wrap;gap:7px 18px;color:var(--muted);font-size:12px;margin:9px 0 12px}
+.lab-empty{padding:18px;border:1px dashed var(--line-dark);border-radius:8px;color:var(--muted);background:#f9fafb;font-size:12px}
+@media(max-width:650px){.lab-barline{grid-template-columns:100px minmax(0,1fr) 65px;gap:7px}}
 </style></head><body><div class="wrap">
 <header class="mast"><div class="header-content"><div><div class="eyebrow">EMRC · RETAIL AUDIT</div><h1>پیش‌بینی فروش</h1><p>از فایل فروش تا برآورد ماه آینده و مقایسه مستند روش‌های پیش‌بینی</p></div><div class="header-side"><strong>افق ۱ تا ۳ ماه</strong></div></div></header>
 <div class="wizard-layout">
@@ -268,8 +292,13 @@ input[type=text]:focus,select:focus{border-color:var(--focus)}
 <select id="selectionStrategy"><option value="hierarchical">چندسطحی؛ با fallback به Market</option>
 <option value="global">فقط Global Market (مقایسه با روش قبلی)</option></select>
 <p class="help">CatBoost همچنان روی داده‌های کل Market آموزش می‌بیند؛ در حالت چندسطحی، Recipe برای شاخه‌های دارای شواهد کافی جدا انتخاب می‌شود.</p></div>
-<div hidden><select id="cutoff"></select><select id="window"></select><select id="method"><option value="auto">خودکار</option></select></div><div class="run-summary" id="runSummary" aria-live="polite"><div><strong>خلاصه درخواست</strong><p id="runSummaryText">پس از انتخاب بازار، خلاصه درخواست در اینجا نمایش داده می‌شود.</p></div></div><p class="help">روش منتخب بر اساس خطای ارزیابی تاریخی انتخاب می‌شود؛ این خطا تضمین دقت ماه آینده نیست.</p><div class="stage-actions"><button class="btn" id="run">محاسبه پیش‌بینی</button><button class="btn secondary" id="backTarget" type="button">بازگشت به فیلترها</button></div></section>
-</aside><main class="stage-card" id="main" data-panel="4" aria-live="polite" hidden><div class="result-actions"><button class="btn secondary" id="exportFull" type="button">دانلود Excel کامل (همه سطوح و ۳ دوره)</button><button class="btn secondary" id="editSelection" type="button">تغییر فیلترها</button><button class="btn secondary" id="editTarget" type="button">تغییر ماه هدف</button><button class="btn secondary" id="newSource" type="button">فایل جدید</button></div><div id="results"><div class="empty"><div class="empty-visual">▤</div><strong>آمادهٔ ساخت پیش‌بینی</strong><p>فایل مستر، بازار و ماه هدف را انتخاب کنید؛ سپس پیش‌بینی و مدل منتخب اینجا نمایش داده می‌شود.</p></div></div></main></div>
+<div class="model-lab-intro"><strong>آزمایش مقایسه‌ای مدل‌ها (Model Lab)</strong>
+<p>در این آزمون هر سه روش Legacy Global، Guarded Global و Hierarchical روی یک Holdout تاریخی یکسان مقایسه می‌شوند. آزمون برای کل Market و سطح تجمیع انتخاب‌شده انجام می‌شود؛ فیلترهای برند و SKU فقط در پیش‌بینی عادی کاربرد دارند.</p>
+<div class="field"><label for="backtestMetric">شاخص‌های قابل‌آزمایش</label><select id="backtestMetric">
+<option value="both">هر دو: حجم و ارزش فروش</option><option value="volume_kg">فقط حجم فروش</option>
+<option value="value_1000_toman">فقط ارزش فروش</option></select></div></div>
+<div hidden><select id="cutoff"></select><select id="window"></select><select id="method"><option value="auto">خودکار</option></select></div><div class="run-summary" id="runSummary" aria-live="polite"><div><strong>خلاصه درخواست</strong><p id="runSummaryText">پس از انتخاب بازار، خلاصه درخواست در اینجا نمایش داده می‌شود.</p></div></div><p class="help">روش منتخب بر اساس خطای ارزیابی تاریخی انتخاب می‌شود؛ این خطا تضمین دقت ماه آینده نیست.</p><div class="stage-actions"><button class="btn" id="run">محاسبه پیش‌بینی</button><button class="btn secondary" id="runBacktest" type="button">اجرای آزمون و مقایسه مدل‌ها</button><button class="btn secondary" id="backTarget" type="button">بازگشت به فیلترها</button></div></section>
+</aside><main class="stage-card" id="main" data-panel="4" aria-live="polite" hidden><div class="result-actions"><button class="btn secondary" id="downloadBacktest" type="button" hidden>دانلود گزارش کامل (CSV / ZIP)</button><button class="btn secondary" id="exportFull" type="button">دانلود Excel کامل (همه سطوح و ۳ دوره)</button><button class="btn secondary" id="editSelection" type="button">تغییر فیلترها</button><button class="btn secondary" id="editTarget" type="button">تغییر ماه هدف</button><button class="btn secondary" id="newSource" type="button">فایل جدید</button></div><div id="results"><div class="empty"><div class="empty-visual">▤</div><strong>آمادهٔ ساخت پیش‌بینی</strong><p>فایل مستر، بازار و ماه هدف را انتخاب کنید؛ سپس پیش‌بینی و مدل منتخب اینجا نمایش داده می‌شود.</p></div></div></main></div>
 <div class="foot">نتایج بر پایه داده‌های گزارش Retail Audit محاسبه می‌شوند. واحدها از فایل ورودی خوانده می‌شوند و خطای تاریخی به معنی تضمین عملکرد آینده نیست.</div>
 </div><script>
 const defaultDimNames=['City','Company','Brand','SubBrand','Subcategory','Subcategory2','Subcategory3','Subcategory4'];
@@ -278,7 +307,7 @@ let dimNames=[...defaultDimNames],labels=[...defaultDimLabels];
 let data=null,pendingSource=null,selectedUpload=null,busy=false;
 let userStartedImport=false;
 let activeStage=0,maxStage=0,schemaNeedsReview=false,resultReady=false,recheckingMapping=false;
-let sourceMode='none';
+let sourceMode='none',latestLabData=null;
 const el=id=>document.getElementById(id);
 const persian=n=>new Intl.NumberFormat('fa-IR',{maximumFractionDigits:0}).format(n);
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -304,6 +333,7 @@ function updateWizard(){
   el('nextSchema').disabled=busy||!review;
   el('nextFilters').disabled=busy||!review;
   el('run').disabled=busy||!review;
+  el('runBacktest').disabled=busy||!review;
   el('upload').disabled=busy||!selectedUpload;
   document.querySelectorAll('.progress-step').forEach(button=>{
     const step=Number(button.dataset.step);
@@ -418,7 +448,8 @@ function setData(next,initial=false){
   // A late startup response must not overwrite an import or frequency choice.
   if(initial&&userStartedImport)return;
   sourceMode=pendingSource==='builtin'||(initial&&String(next.source).includes('نمونه'))?'sample':'file';
-  data=next;schemaNeedsReview=false;resultReady=false;maxStage=0;
+  data=next;schemaNeedsReview=false;resultReady=false;maxStage=0;latestLabData=null;
+  el('downloadBacktest').hidden=true;el('exportFull').hidden=false;
   el('periodicity').value=next.periodicity||'monthly';
   dimNames=Array.isArray(next.dimensions)&&next.dimensions.length?next.dimensions:[...defaultDimNames];
   labels=dimNames.map(name=>defaultDimNames.includes(name)?defaultDimLabels[defaultDimNames.indexOf(name)]:name);
@@ -831,6 +862,7 @@ function renderFuture(r){
 }
 
 el('selectionStrategy').onchange=()=>{invalidateResult();updateRunSummary()};
+el('backtestMetric').onchange=()=>{invalidateResult()};
 el('exportFull').onclick=async()=>{
   if(!data||busy)return;
   lockButtons(true);
@@ -864,6 +896,7 @@ el('run').onclick=async()=>{
     dimNames.forEach((name,i)=>{let v=el('f'+i).value;if(v!=='*')filters[name]=v});
     const r=await post('/api/predict',{metric:el('metric').value,horizon:Number(el('horizon').value),filters,strategy:el('selectionStrategy').value});
     renderFuture(r);appendSelectedBenchmark(r);
+    el('downloadBacktest').hidden=true;el('exportFull').hidden=false;latestLabData=null;
     resultReady=true;showStage(4,true);
     status('پیش‌بینی '+r.target+' با موفقیت آماده شد؛ نمودار و دلایل انتخاب روش در صفحه نتایج نمایش داده شده‌اند.','success');
   }catch(e){
