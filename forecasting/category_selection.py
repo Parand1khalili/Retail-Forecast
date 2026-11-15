@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import numpy as np
+from benchmark_levels import compare_levels, summarize_levels
 
 
 @dataclass(frozen=True)
@@ -184,7 +185,7 @@ def forecast_with_recipes(dataset, horizon, components, global_recipe, hierarchy
 
 
 def holdout_comparison(dataset, metric, holdout_origin, candidates_at_holdout,
-                        global_recipes, hierarchy):
+                        global_recipes, hierarchy, legacy_recipes=None):
     """Independent audit. This information MUST NOT influence recipe selection."""
     result = {'origin': dataset.months[holdout_origin], 'used_for_selection': False,
               'horizons': {}, 'note': 'One untouched historical origin; not a guarantee of future accuracy.'}
@@ -192,14 +193,16 @@ def holdout_comparison(dataset, metric, holdout_origin, candidates_at_holdout,
         if holdout_origin + horizon >= len(dataset.months):
             continue
         global_recipe = global_recipes[str(horizon)]
+        legacy_recipe=(legacy_recipes or global_recipes)[str(horizon)]
         def predict(recipe):
             return sum(weight * candidates_at_holdout[name][:, horizon - 1]
                        for name, weight in recipe['components'])
-        needed = {name for item in [global_recipe] + hierarchy['overrides'].get(str(horizon), [])
+        needed = {name for item in [global_recipe, legacy_recipe] + hierarchy['overrides'].get(str(horizon), [])
                   for name, _ in item['components']}
         if not needed.issubset(candidates_at_holdout):
             continue
         baseline = predict(global_recipe)
+        legacy_prediction = predict(legacy_recipe)
         recipes = series_recipes(dataset, global_recipe, hierarchy, horizon)
         distinct = {r['name']: r for r in recipes if r['name'] != global_recipe['name']}
         cache = {name: predict(recipe) for name, recipe in distinct.items()}
@@ -208,6 +211,9 @@ def holdout_comparison(dataset, metric, holdout_origin, candidates_at_holdout,
         actual = dataset.metric(metric)[:, holdout_origin + horizon]
         global_stats = _stats(actual, baseline)
         hierarchical_stats = _stats(actual, proposed)
+        legacy_stats = _stats(actual, legacy_prediction)
+        level_rows=compare_levels(dataset,actual,baseline,proposed,holdout_origin,
+                                  legacy=legacy_prediction)
         branches = _groups(dataset, hierarchy.get('dimensions', [])[:1]) if hierarchy.get('dimensions') else {}
         improved = deteriorated = unchanged = 0
         for rows in branches.values():
@@ -220,6 +226,13 @@ def holdout_comparison(dataset, metric, holdout_origin, candidates_at_holdout,
             'groups_improved': improved, 'groups_deteriorated': deteriorated,
             'groups_unchanged': unchanged,
             'global': global_stats, 'hierarchical': hierarchical_stats,
+            'legacy_global':legacy_stats,
+            'legacy_recipe':legacy_recipe['name'],
+            'global_recipe':global_recipe['name'],
+            'level_summary':summarize_levels(level_rows),
+            'relative_error_reduction_vs_legacy':(
+                (legacy_stats['absolute_error'] - hierarchical_stats['absolute_error']) /
+                legacy_stats['absolute_error'] if legacy_stats['absolute_error']>0 else None),
             'relative_error_reduction': (
                 (global_stats['absolute_error'] - hierarchical_stats['absolute_error']) /
                 global_stats['absolute_error'] if global_stats['absolute_error'] > 0 else None),
