@@ -53,3 +53,34 @@ jobs:
             -f state="$state" \
             -f description="$description" \
             -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+  windows-python-314:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: forecasting/requirements.txt
+      - name: Install requirements into the same active Python
+        run: python -m pip install -r forecasting/requirements.txt
+      - name: Confirm CatBoost import and active interpreter health
+        run: python forecasting/runtime_preflight.py
+      - name: Windows application import and regression suite
+        run: |
+          python -m compileall -q forecasting
+          python -m unittest discover -s forecasting -p "test_*.py" -v
+      - name: Verify Windows click launcher picks healthy interpreter
+        shell: pwsh
+        run: |
+          & (Join-Path $env:GITHUB_WORKSPACE 'run_forecast.ps1') -CheckOnly
+      - name: Publish Windows Python 3.14 status
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          $state = if ($env:JOB_STATUS -eq 'success') { 'success' } else { 'failure' }
+          gh api -X POST "repos/$env:GITHUB_REPOSITORY/statuses/$env:GITHUB_SHA" -f context="forecasting/windows-py314" -f state="$state" -f description="Windows Python 3.14 CatBoost, tests, and launcher check" -f target_url="$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
