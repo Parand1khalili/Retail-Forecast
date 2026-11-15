@@ -65,5 +65,6 @@ def require_ready(report):
 
 if __name__ == '__main__':
     state = diagnose()
-    print(json.dumps(state, ensure_ascii=False))
+    # Escape non-ASCII output for legacy Windows console encodings (e.g. cp1252).
+    print(json.dumps(state, ensure_ascii=True))
     raise SystemExit(0 if state['ready'] else 2)
