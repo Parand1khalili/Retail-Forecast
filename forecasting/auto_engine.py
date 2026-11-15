@@ -12,7 +12,8 @@ sys.path.insert(0,str(ROOT/'analysis/model_deps'))
 from catboost import CatBoostRegressor
 from backtest import FeatureBuilder
 from light_benchmark import candidates as light_candidates
-from selection_core import (rolling_plan, candidate_info, candidate_registry, choose_champion, ChampionGuard)
+from selection_core import (rolling_plan, candidate_info, candidate_registry, choose_champion, ChampionGuard,
+                            eligible_candidates)
 from category_selection import (category_dimensions, select_category_overrides,
                                 forecast_with_recipes, series_recipes, holdout_comparison,
                                 filtered_holdout_summary)
@@ -212,13 +213,7 @@ def select_recipes(d,metric,origins,by_origin,selection_mode='guarded'):
     if selection_mode not in ('guarded','legacy'):
         raise ValueError('Unknown model selection mode.')
     if not origins:raise ValueError('At least one completed validation origin is required.')
-    common=set.intersection(*(set(by_origin[o]) for o in origins))
-    # Exclude invalid candidate recipes entirely, rather than letting NaN win.
-    expected_shape=(len(d.meta),3)
-    common={name for name in common if all(
-        np.asarray(by_origin[o][name]).shape==expected_shape and
-        np.isfinite(by_origin[o][name]).all() and
-        (by_origin[o][name]>=0).all() for o in origins)}
+    common,rejected=eligible_candidates(by_origin,origins,metric,d.periodicity,len(d.meta))
     if not common:raise ValueError('No finite, nonnegative common candidates across validation origins.')
     policy={};validation=[];truth=d.metric(metric)
     grain='market_segment' if 'Market' in d.all_dimensions() else 'city_segment'
@@ -274,6 +269,7 @@ def select_recipes(d,metric,origins,by_origin,selection_mode='guarded'):
                             'scope':'all_series','horizon':h,'selected':winner,
                             'candidate_scores':ranked,
                             'candidate_registry':candidate_registry(pp.keys()),
+                            'rejected_candidates':rejected,
                             'selection_decision':decision,
                             'origin_details':by_month
                         }}
