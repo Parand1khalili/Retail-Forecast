@@ -148,6 +148,40 @@ class UploadServerTests(unittest.TestCase):
         self.assertIn('error', body)
         self.assertEqual(run.call_count, 1)
 
+    def test_dependency_failure_prevents_predict_lab_and_export_before_training(self):
+        """A different Python from pip must be diagnosed before a user clicks Run."""
+        broken={
+            'ready':False,
+            'python_executable':r'C:\My Venv\Scripts\python.exe',
+            'python_version':'3.14.0',
+            'packages':{'numpy':'2.5.3','pandas':'2.3.3','catboost':None},
+            'failures':[{'package':'catboost',
+                         'reason':"No module named 'catboost'",
+                         'error_type':'ModuleNotFoundError'}],
+            'install_command':r'& "C:\My Venv\Scripts\python.exe" -m pip install -r "C:\project\forecasting\requirements.txt"',
+            'message':'Forecast engine is not ready.',
+        }
+        with patch.dict(self.app.DEPENDENCIES,broken,clear=True):
+            health_status,health=self.request('GET','/api/health')
+            self.assertEqual(health_status,200)
+            self.assertFalse(health['ready'])
+            self.assertEqual(health['runtime']['dependencies']['python_executable'],
+                             broken['python_executable'])
+            for method,route,body in (
+                ('POST','/api/predict',b'{}'),
+                ('POST','/api/backtest',b'{"metrics":["volume_kg"]}'),
+                ('GET','/api/export/full',None),
+            ):
+                with self.subTest(route=route):
+                    status,payload=self.request(method,route,body)
+                    self.assertEqual(status,503)
+                    self.assertEqual(payload['dependency_check']['install_command'],
+                                     broken['install_command'])
+                    self.assertIn('error',payload)
+            # Upload/schema inspection remain usable even while ML is unavailable.
+            self.assertEqual(self.request('GET','/api/data')[0],200)
+        self.assertEqual(self.request('GET','/api/health')[1]['ready'],True)
+
     def test_no_sample_still_allows_uploading(self):
         status, body = self.request("GET", "/api/data")
         self.assertEqual(status, 200)
