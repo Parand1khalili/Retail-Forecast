@@ -221,22 +221,45 @@ class Dataset:
                        self.months,self.source,self.volume_unit,self.value_unit,
                        self.dimension_names,self.schema,self.periodicity)
 
-    def for_grain(self, grain=None):
-        """Keep summary rows and SKU rows in independent forecast populations.
+    def report_grain_levels(self):
+        """Identify genuine aggregate/SKU levels, not arbitrary Element captions.
 
-        A source may contain overlapping Product/Company/SKU reporting records.
-        Their levels must never be summed or trained together accidentally.
+        Element Caption can contain brand/product labels rather than grain
+        indicators. Treating every distinct caption as a reporting level
+        incorrectly prevents forecasts and fragments global model training.
+        Ambiguous mixes are rejected instead of silently double-counted.
         """
-        dim=next((x for x in ('Element Caption','ElementCaption')
-                  if x in self.all_dimensions()),None)
-        if dim is None:return self
-        col=self.all_dimensions().index(dim)
-        levels=set(self.meta[:,col])
-        if len(levels)>1 and (not grain or grain=='*'):
+        field=next((name for name in ('Element Caption','ElementCaption')
+                    if name in self.all_dimensions()),None)
+        if field is None:return [None]
+        col=self.all_dimensions().index(field)
+        levels=list(dict.fromkeys(str(value).strip() for value in self.meta[:,col]))
+        if len(levels)<=1:return [None]
+        report={'sku','skus','product','products','company','companies','brand',
+                'subbrand','sub brand','category','subcategory','sub category',
+                'total','all products','all'}
+        recognised=[name for name in levels if name.casefold() in report]
+        if not recognised:return [None]
+        if len(recognised)!=len(levels):
+            raise ValueError('Element Caption شامل ترکیبی از سطوح تجمیع و نام محصولات است؛ لطفاً ساختار فایل را بررسی کنید.')
+        return levels
+
+    def for_grain(self, grain=None):
+        """Separate only confirmed reporting grains such as SKU and Product.
+
+        Ordinary product labels under Element Caption remain available for
+        filtering, but never force separate model training.
+        """
+        levels=self.report_grain_levels()
+        if levels==[None]:return self
+        if not grain or grain=='*':
             raise ValueError('این فایل چند سطح تجمیع محصول دارد؛ ابتدا Element Caption را انتخاب کنید تا SKU و Product با هم جمع نشوند.')
-        if not grain or grain=='*':return self
+        dim=next(x for x in ('Element Caption','ElementCaption')
+                 if x in self.all_dimensions())
+        col=self.all_dimensions().index(dim)
         selected=self.meta[:,col]==grain
-        if not selected.any():raise ValueError('سطح تجمیع محصول انتخاب‌شده در فایل موجود نیست.')
+        if not selected.any():
+            raise ValueError('سطح تجمیع محصول انتخاب‌شده در فایل موجود نیست.')
         return Dataset(self.meta[selected],self.volume[selected],self.value[selected],
                        self.months,self.source,self.volume_unit,self.value_unit,
                        self.dimension_names,self.schema,self.periodicity)
