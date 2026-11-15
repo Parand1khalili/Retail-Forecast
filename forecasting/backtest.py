@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 ROOT=Path(__file__).resolve().parents[1]
-sys.path.insert(0,str(ROOT/'analysis/model_deps'))
+# Use packages from the active Python interpreter, not stale vendored wheels.
 from catboost import CatBoostRegressor
 
 OUT=ROOT/'outputs/yoghurt_backtest'
