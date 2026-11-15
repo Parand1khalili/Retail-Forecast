@@ -204,7 +204,7 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__=='__main__':
     if not DEPENDENCIES['ready']:
-        print('WARNING: EMRC Forecast's CatBoost engine is not available in this Python.',flush=True)
+        print("WARNING: EMRC Forecast CatBoost engine is not available in this Python.",flush=True)
         print(('Python: '+DEPENDENCIES['python_executable']).encode('ascii','backslashreplace').decode('ascii'),flush=True)
         print(('Install: '+DEPENDENCIES['install_command']).encode('ascii','backslashreplace').decode('ascii'),flush=True)
     server=ThreadingHTTPServer((HOST,PORT),Handler)
