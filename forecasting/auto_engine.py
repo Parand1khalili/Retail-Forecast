@@ -12,8 +12,7 @@ sys.path.insert(0,str(ROOT/'analysis/model_deps'))
 from catboost import CatBoostRegressor
 from backtest import FeatureBuilder
 from light_benchmark import candidates as light_candidates
-from selection_core import (rolling_plan, candidate_registry, choose_champion)
-from benchmark_levels import compare_levels, summarize_levels
+from selection_core import (rolling_plan, candidate_info, candidate_registry, choose_champion, ChampionGuard)
 from category_selection import (category_dimensions, select_category_overrides,
                                 forecast_with_recipes, series_recipes, holdout_comparison,
                                 filtered_holdout_summary)
@@ -309,6 +308,13 @@ def study():
     emit('FINISHED',json.dumps(later))
 
 def forecast_component(d,metric,cutoff,name):
+    # A single registry validates candidate capabilities; actual training stays
+    # in the established globally fitted components and their SHA-keyed cache.
+    spec=candidate_info(name)
+    if metric not in spec.metrics or d.periodicity not in spec.periodicities:
+        raise ValueError('Forecast candidate is incompatible with the metric or periodicity.')
+    if cutoff+1 < spec.min_history:
+        raise ValueError('Insufficient history for selected candidate.')
     parts=name.split('|')
     if parts[0] in ['base','light','price-trend']:return base_candidates(d,metric,cutoff)[name]
     window=int(parts[2]) if parts[2]!='all' else 'all'
@@ -327,12 +333,15 @@ def dataset_policy(d,metric,cutoff,strategy='hierarchical'):
     """Select recipes exclusively on completed historical target observations."""
     if strategy not in ('hierarchical','global'):
         raise ValueError('روش انتخاب مدل باید سلسله‌مراتبی یا Global باشد.')
+    configuration=rolling_plan(cutoff,strategy,categories_available=bool(category_dimensions(d)))
     digest=hashlib.sha256(VERSION.encode()+POLICY_VERSION.encode()+metric.encode()+strategy.encode()+
+        json.dumps(configuration['configuration'],sort_keys=True).encode()+
+        json.dumps(ChampionGuard().__dict__,sort_keys=True).encode()+
         d.periodicity.encode()+json.dumps(d.all_dimensions()).encode()+d.meta.tobytes()+
         d.volume[:,:cutoff+1].tobytes()+d.value[:,:cutoff+1].tobytes()).hexdigest()[:24]
     cached=OUT/'runtime_policies'/f'{digest}.json';cached.parent.mkdir(exist_ok=True)
     if cached.exists():return json.loads(cached.read_text(encoding='utf-8'))
-    origins,holdout=_selection_origins(d,cutoff,strategy)
+    origins,holdout=configuration['selection'],configuration['holdout']
     by_origin={o:candidates(d,metric,o) for o in origins}
     mode='guarded' if holdout is not None else 'legacy'
     policy,_=select_recipes(d,metric,origins,by_origin,selection_mode=mode)
@@ -361,7 +370,10 @@ def dataset_policy(d,metric,cutoff,strategy='hierarchical'):
                             'independent':holdout is not None,
                             'periodicity':d.periodicity,
                             'period_months':d.period_months,
-                            'selection_policy_version':POLICY_VERSION}
+                            'selection_policy_version':POLICY_VERSION,
+                            'plan_reason':configuration['reason'],
+                            'configuration':configuration['configuration'],
+                            'champion_guard':ChampionGuard().__dict__}
     for h in ('1','2','3'):
         policy[h]['basis']='انتخاب تاریخی Global و در صورت شواهد پایدار، Recipe اختصاصی گروه؛ بدون آموزش جداگانه CatBoost برای هر SKU'
     cached.write_text(json.dumps(policy,ensure_ascii=False,indent=2),encoding='utf-8')
