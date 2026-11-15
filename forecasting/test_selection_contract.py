@@ -71,7 +71,8 @@ class CandidateContractTests(unittest.TestCase):
         self.assertEqual(len(policy),3)
         self.assertTrue(all(policy[str(h)]['name']=='ml|raw|24' for h in (1,2,3)))
         self.assertTrue(all(policy[str(h)]['validation_wape']==0. for h in (1,2,3)))
-        self.assertEqual(len(records),6)
+        # Two original candidates plus three valid weighted blends per horizon.
+        self.assertEqual(len(records),3*(2+3))
         self.assertEqual(policy['1']['selection_evidence']['rejected_candidates'],{})
 
     def test_future_actuals_do_not_change_past_competition(self):
