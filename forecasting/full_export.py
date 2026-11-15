@@ -74,7 +74,7 @@ def _modelled_rows(dataset, strategy='hierarchical'):
         grain_levels=selected_market.report_grain_levels()
         for grain in grain_levels:
             mask=market_mask.copy()
-            if grain_col is not None:
+            if grain_col is not None and grain is not None:
                 mask &= dataset.meta[:,grain_col] == grain
             rows=np.flatnonzero(mask)
             selected=selected_market.for_grain(grain) if grain is not None else selected_market
