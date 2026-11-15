@@ -280,10 +280,10 @@ input[type=text]:focus,select:focus{border-color:var(--focus)}
 </nav>
 <div class="status" id="status" role="status" aria-live="polite">فایل مستر را وارد کنید یا از نمونه موجود استفاده کنید.</div>
 <div class="runtime-alert" id="runtimeAlert" role="alert" hidden>
-<strong>موتور پیش‌بینی آماده نیست؛ Python فعال را بررسی کنید.</strong>
+<strong id="runtimeTitle">وضعیت موتور Forecast در حال بررسی است.</strong>
 <div id="runtimeProblem"></div>
 <code id="runtimeCommand"></code>
-<div>بعد از نصب Dependencyها، برنامه Python را متوقف و دوباره اجرا کنید و صفحه را Refresh کنید.</div>
+<div id="runtimeHint"></div>
 </div>
 <aside class="stage-card" aria-label="مراحل پیش‌بینی">
 <section class="wizard-stage" data-panel="0"><div class="stage-heading"><span class="stage-num">01</span><h2>فایل فروش را وارد کنید</h2></div><p class="stage-lead">فایل مستر Excel را انتخاب کنید؛ ساختار ستون‌ها در مرحله بعد بررسی می‌شود.</p><div class="field"><label for="periodicity">نوع دوره داده‌های فروش</label><select id="periodicity"><option value="monthly">ماهانه (هر ستون یک ماه)</option><option value="bimonthly">دوماهه (مانند May-Jun 2026)</option></select><p class="help">این انتخاب هنگام خواندن فایل و محاسبه پیش‌بینی اعمال می‌شود.</p></div><div class="source source-indicator" id="source" aria-live="polite">هیچ فایلی برای این نشست انتخاب نشده است.</div><div id="sourceKind" class="badge" hidden></div><div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="انتخاب فایل Excel یا رها کردن فایل در این قسمت"><span class="drop-icon" aria-hidden="true">⇧</span><strong>فایل Excel را اینجا رها کنید</strong><span>یا <span class="pick-link">انتخاب فایل</span> را بزنید</span><span>Excel (.xlsx) · حداکثر ۲۲۰ مگابایت</span></div><input class="file-input" type="file" id="file" accept=".xlsx"><div id="selectedFile" class="selected-file" hidden></div><button id="upload" class="btn secondary" disabled>بارگذاری دوباره فایل</button><details class="optional-path"><summary>راه دیگر: خواندن از مسیر فایل در رایانه</summary><div class="field"><label for="localPath">مسیر کامل فایل .xlsx روی رایانه اجراکننده برنامه</label><div class="fileline"><input type="text" id="localPath" placeholder="H:\folder\master.xlsx"><button class="btn secondary" id="loadPath">خواندن</button></div></div></details><p class="help">ستون شاخص فروش (Measure یا Index Name) مرز دسته‌بندی‌ها و تاریخ‌های ماهانه است. در مرحله بعد می‌توانید تشخیص را اصلاح کنید.</p><div class="sample-option"><span class="help">فایل خودتان در دسترس نیست؟</span> <button id="sample" class="btn secondary">استفاده از نمونه ماست</button></div>
@@ -336,20 +336,45 @@ const status=(msg,kind='info')=>{
   el('status').textContent=msg;
   el('status').className='status '+(kind===true?'error':kind);
 };
-function showRuntimeStatus(health){
-  const report=health?.runtime?.dependencies;
-  engineReady=Boolean(health?.ready&&report?.ready);
+function showRuntimeStatus(health,requestError=''){
+  const runtime=health?.runtime,report=runtime?.dependencies;
+  const compatible=health?.service==='ra-forecast' &&
+    report && typeof report.ready==='boolean' &&
+    typeof report.python_executable==='string';
+  engineReady=Boolean(compatible&&health.ready&&report.ready);
   el('runtimeAlert').hidden=engineReady;
   if(!engineReady){
-    const failures=(report?.failures||[]).map(item=>item.package+': '+item.reason);
-    const python=report?.python_executable||'نامشخص';
-    el('runtimeProblem').textContent='Python فعال: '+python+
-      (failures.length?' · خطا: '+failures.join('؛ '):' · وضعیت نصب Dependencyها قابل بررسی نیست.');
-    el('runtimeCommand').textContent=report?.install_command||
-      'python -m pip install -r requirements.txt';
+    let title='',detail='',command='',hint='';
+    if(requestError){
+      title='اتصال به API وضعیت برنامه برقرار نشد.';
+      detail='درخواست /api/health ناموفق بود: '+requestError+
+        '؛ این خطا اثبات نمی‌کند که CatBoost نصب نیست.';
+      command='Get-NetTCPConnection -LocalPort 8765 -State Listen';
+      hint='در ترمینال VS Code سرور را بررسی کنید. از پوشه forecasting دستور python app.py را اجرا کنید و صفحه را با Ctrl+F5 نوسازی کنید.';
+    }else if(!compatible){
+      title='نسخه سرور اجراشده با رابط فعلی سازگار نیست.';
+      const backend=(runtime?.paths?.app_py||runtime?.paths?.['app.py']||runtime?.root||'نامشخص');
+      const python=runtime?.python||'نامشخص';
+      detail='سرور پاسخ می‌دهد اما اطلاعات Dependency Check نسخه جدید را ارائه نمی‌کند. '+
+        'احتمالاً Python قدیمی همچنان روی پورت 8765 اجراست. مسیر سرور: '+backend+
+        ' · Python سرور: '+python;
+      command='Get-NetTCPConnection -LocalPort 8765 -State Listen';
+      hint='ترمینال اجرای قبلی app.py را با Ctrl+C متوقف کنید. بعد از Pull، در پوشه forecasting دوباره python app.py را اجرا و با Ctrl+F5 صفحه را بازخوانی کنید. فقط پردازشی را متوقف کنید که مطمئنید متعلق به همین برنامه است.';
+    }else{
+      title='پکیج‌های موتور در Python فعال بارگذاری نمی‌شوند.';
+      const failures=(report.failures||[]).map(item=>item.package+': '+item.reason);
+      detail='Python فعال: '+report.python_executable+
+        (failures.length?' · خطا: '+failures.join('؛ '):' · اطلاعات پکیج‌ها را بررسی کنید.');
+      command=report.install_command||'python -m pip install -r requirements.txt';
+      hint='این دستور را برای همان Python اجرا کنید. سپس سرور را با Ctrl+C متوقف و دوباره راه‌اندازی کنید.';
+    }
+    el('runtimeTitle').textContent=title;
+    el('runtimeProblem').textContent=detail;
+    el('runtimeCommand').textContent=command;
+    el('runtimeHint').textContent=hint;
+    status(title,'error');
   }
   updateWizard();
-  if(!engineReady)status('Forecast و Model Lab تا رفع مشکل Dependencyها غیرفعال هستند. دستور دقیق نصب در کادر زیر آمده است.',true);
 }
 function updateWizard(){
   const ready=Boolean(data),review=ready&&!schemaNeedsReview;
@@ -1121,10 +1146,10 @@ el('newSource').onclick=()=>advanceTo(0);
 el('horizon').onchange=()=>{invalidateResult();updateRunSummary()};
 makeFilters();showStage(0,true);
 fetch('/api/health',{cache:'no-store'}).then(response=>{
-  if(!response.ok)throw Error('Health endpoint unavailable');
+  if(!response.ok)throw Error('HTTP '+response.status);
   return response.json();
-}).then(showRuntimeStatus).catch(()=>{
-  showRuntimeStatus({ready:false,runtime:{dependencies:null}});
+}).then(health=>showRuntimeStatus(health)).catch(error=>{
+  showRuntimeStatus(null,error?.message||'Network/JSON error');
 });
 fetch('/api/data').then(x=>{if(!x.ok)throw Error('ارتباط با سرور برقرار نشد.');return x.json()}).then(x=>{
   if(userStartedImport)return;
