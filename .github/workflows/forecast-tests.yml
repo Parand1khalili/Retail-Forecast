@@ -3,6 +3,9 @@ on:
   push:
     branches: [master]
   workflow_dispatch:
+permissions:
+  contents: read
+  statuses: write
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -28,3 +31,21 @@ jobs:
           Path('/tmp/forecast-ui.js').write_text(script,encoding='utf-8')
           PY
           node --check /tmp/forecast-ui.js
+      - name: Publish test status to the commit
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          if [ "$JOB_STATUS" = "success" ]; then
+            state=success
+            description="Python regression and UI syntax checks passed"
+          else
+            state=failure
+            description="Forecasting regression checks failed"
+          fi
+          gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f context="forecasting/regression" \
+            -f state="$state" \
+            -f description="$description" \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
