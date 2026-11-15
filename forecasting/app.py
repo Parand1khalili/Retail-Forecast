@@ -21,7 +21,7 @@ try:
     initial_dataset=Dataset.builtin()
 except FileNotFoundError:
     initial_dataset=None
-state={'dataset':initial_dataset}
+state={'dataset':initial_dataset,'benchmark_zip':None}
 lock=threading.RLock()
 training_lock=threading.Lock()
 
@@ -60,6 +60,19 @@ class Handler(BaseHTTPRequestHandler):
         path=urlparse(self.path).path
         if path=='/api/health':
             self.answer({'service':'ra-forecast','ready':True,'runtime':RUNTIME});return
+        if path=='/api/backtest/report':
+            with lock: archive=state.get('benchmark_zip')
+            if archive is None:
+                self.answer({'error':'ابتدا ارزیابی مدل‌ها را برای فایل فعلی اجرا کنید.'},400);return
+            self.send_response(200)
+            self.send_header('Content-Type','application/zip')
+            self.send_header('Content-Disposition','attachment; filename="emrc_model_backtest.zip"')
+            self.send_header('Content-Length',str(len(archive)))
+            self.send_header('Cache-Control','no-store')
+            self.end_headers()
+            for start in range(0,len(archive),1024*1024):
+                self.wfile.write(archive[start:start+1024*1024])
+            return
         if path=='/api/export/full':
             import tempfile
             strategy=parse_qs(urlparse(self.path).query).get('strategy',['hierarchical'])[0]
@@ -124,7 +137,9 @@ class Handler(BaseHTTPRequestHandler):
                     dataset=Dataset.file(dest,mapping);dataset.source=name
                 finally:
                     cleanup_upload(dest)
-                with lock:state['dataset']=dataset
+                with lock:
+                    state['dataset']=dataset
+                    state['benchmark_zip']=None
                 self.answer(dataset.options());return
             body=json.loads(self.rfile.read(n))
             if path=='/api/load':
@@ -136,8 +151,24 @@ class Handler(BaseHTTPRequestHandler):
                     mapping=dict(body.get('mapping') or {})
                     mapping['periodicity']=body.get('periodicity',mapping.get('periodicity','monthly'))
                     dataset=Dataset.file(loc,mapping)
-                with lock:state['dataset']=dataset
+                with lock:
+                    state['dataset']=dataset
+                    state['benchmark_zip']=None
                 self.answer(dataset.options());return
+            if path=='/api/backtest':
+                from backtest_lab import run_backtest
+                with lock: dataset=state['dataset']
+                if dataset is None:
+                    raise ValueError('ابتدا فایل Excel را وارد و ستون‌های آن را تأیید کنید.')
+                chosen=dataset.for_market(body.get('market')).for_grain(body.get('grain'))
+                with training_lock:
+                    report_data, archive=run_backtest(chosen,body.get('metrics'))
+                with lock:
+                    if state['dataset'] is not dataset:
+                        self.answer({'error':'فایل ورودی در حین آزمون تغییر کرده است؛ دوباره آزمون را اجرا کنید.'},409)
+                        return
+                    state['benchmark_zip']=archive
+                self.answer(report_data);return
             if path=='/api/forecast':
                 with lock:dataset=state['dataset']
                 self.answer(predict(dataset,body));return
