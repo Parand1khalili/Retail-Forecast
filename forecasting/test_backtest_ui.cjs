@@ -86,4 +86,36 @@ const noHoldout = {...fake, summaries:[
 const result = runWithData(noHoldout);
 assert.match(result.nodes.results.innerHTML,/Holdout کافی نیست/);
 assert.match(result.nodes.labGroupTable.innerHTML,/دادهٔ Holdout موجود نیست/);
+// The active interpreter's dependency status must be visible before Forecast runs.
+const runtimeStart = html.indexOf('function showRuntimeStatus(health){');
+const runtimeEnd = html.indexOf('function updateWizard(){',runtimeStart);
+assert.ok(runtimeStart >= 0 && runtimeEnd > runtimeStart);
+const runtimeNodes = Object.fromEntries(['runtimeAlert','runtimeProblem','runtimeCommand']
+  .map(key => [key,{hidden:true,textContent:''}]));
+let wizardChecks = 0, runtimeError = '';
+const runtimeSandbox = {
+  engineReady:false,
+  el:id=>runtimeNodes[id],
+  updateWizard:()=>{wizardChecks++;},
+  status:msg=>{runtimeError=msg;},
+};
+vm.createContext(runtimeSandbox);
+vm.runInContext(html.slice(runtimeStart,runtimeEnd),runtimeSandbox);
+runtimeSandbox.showRuntimeStatus({ready:false,runtime:{dependencies:{
+  ready:false,
+  python_executable:'C:\\My Project\\.venv\\Scripts\\python.exe',
+  failures:[{package:'catboost',reason:"No module named 'catboost'"}],
+  install_command:'python -m pip install -r requirements.txt'
+}}});
+assert.equal(runtimeNodes.runtimeAlert.hidden,false);
+assert.match(runtimeNodes.runtimeProblem.textContent,/catboost/);
+assert.match(runtimeNodes.runtimeProblem.textContent,/My Project/);
+assert.match(runtimeNodes.runtimeCommand.textContent,/pip install -r/);
+assert.match(runtimeError,/غیرفعال/);
+runtimeSandbox.showRuntimeStatus({ready:true,runtime:{dependencies:{ready:true}}});
+assert.equal(runtimeSandbox.engineReady,true);
+assert.equal(runtimeNodes.runtimeAlert.hidden,true);
+assert.equal(wizardChecks,2);
+console.log('Runtime dependency preflight UI and error guidance: PASS');
+
 console.log('Model Lab UI rendering, filters, zero-demand N/A and escaping: PASS');
