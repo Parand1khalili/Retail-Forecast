@@ -1,3 +1,4 @@
+param([switch]$CheckOnly)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 # Prefer a usable local environment, but never silently launch an environment
@@ -41,6 +42,7 @@ if (-not $pythonExe) {
     throw 'No Python installation with working NumPy, Pandas and CatBoost found. Install requirements into the chosen Python and retry.'
 }
 Write-Host ('EMRC Forecast Python: ' + $pythonExe)
+if ($CheckOnly) { Write-Host 'EMRC_FORECAST_PREFLIGHT_OK'; exit 0 }
 $expected = (& $pythonExe -B (Join-Path $projectRoot 'forecasting\runtime_identity.py')) | ConvertFrom-Json
 function Read-Health {
     try { Invoke-RestMethod 'http://127.0.0.1:8765/api/health' -TimeoutSec 2 } catch { $null }
