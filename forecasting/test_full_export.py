@@ -104,6 +104,34 @@ class FullExportTests(unittest.TestCase):
         self.assertEqual(set(seen),{('SKU',),('Product',)})
         self.assertEqual(len(seen),12)
 
+    def test_ordinary_element_captions_share_one_global_training_population(self):
+        dims=['City','Company','Brand','Market','Element Caption']
+        meta=np.array([['All','Co','A','All','Aqua'],
+                       ['All','Co','B','All','Beta']],dtype='<U32')
+        d=Dataset(meta,np.array([[5.,6.],[50.,60.]]),
+                  np.array([[7.,8.],[70.,80.]]),
+                  ['2026-05','2026-06'],'labels',dimension_names=dims)
+        self.assertEqual(d.report_grain_levels(),[None])
+        self.assertEqual(len(d.for_grain('Aqua').meta),2)
+        seen=[]
+        def forecast(sub,metric,horizon):
+            seen.append(len(sub.meta))
+            return sub.metric(metric)[:,-1],{}
+        with patch.object(full_export,'automatic_forecast',side_effect=forecast):
+            full_export.export_workbook(d,self.path)
+        self.assertEqual(seen,[2]*6)  # One global population, 2 metrics x 3 horizons.
+
+    def test_ambiguous_caption_mixture_is_not_silently_combined(self):
+        dims=['City','Company','Brand','Market','Element Caption']
+        meta=np.array([['All','Co','A','All','SKU'],
+                       ['All','Co','B','All','Beta']],dtype='<U32')
+        d=Dataset(meta,np.array([[5.,6.],[50.,60.]]),
+                  np.array([[7.,8.],[70.,80.]]),
+                  ['2026-05','2026-06'],'ambiguous',dimension_names=dims)
+        with self.assertRaisesRegex(ValueError,'Element Caption'):
+            full_export.export_workbook(d,self.path)
+        self.assertFalse(self.path.exists())
+
     def test_global_only_option_is_forwarded_through_export(self):
         seen=[]
         def forecast(d,metric,horizon,strategy='hierarchical'):
