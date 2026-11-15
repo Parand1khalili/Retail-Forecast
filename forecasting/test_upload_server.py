@@ -75,6 +75,79 @@ class UploadServerTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_model_lab_http_run_download_and_upload_invalidation(self):
+        from io import BytesIO
+        from zipfile import ZipFile
+        import backtest_lab
+
+        status, response = self.request('GET', '/api/backtest/report')
+        self.assertEqual(status, 400)
+        self.assertIn('error', response)
+        status, response = self.request(
+            'POST', '/api/backtest',
+            body=json.dumps({'market':'All','metrics':['volume_kg']}).encode())
+        self.assertEqual(status, 400)
+
+        class Imported:
+            source = 'test_master.xlsx'
+            def for_market(self, market):
+                if market != 'All':
+                    raise ValueError('Unselected Market')
+                return self
+            def for_grain(self, grain):
+                return self
+            def options(self):
+                return {'source': self.source, 'months': ['2026-05','2026-06']}
+        dataset = Imported()
+        self.app.state['dataset'] = dataset
+        buffer = BytesIO()
+        with ZipFile(buffer, 'w') as archive:
+            archive.writestr('volume_kg_summary.csv', 'metric,wape\nvolume_kg,0.1')
+        contents = buffer.getvalue()
+        expected = {'market':'All', 'metrics':['volume_kg'], 'summaries':[]}
+        with patch.object(backtest_lab, 'run_backtest',
+                          return_value=(expected, contents)) as run:
+            status, payload = self.request(
+                'POST', '/api/backtest',
+                body=json.dumps({'market':'All','metrics':['volume_kg']}).encode())
+        self.assertEqual(status, 200)
+        self.assertEqual(payload, expected)
+        run.assert_called_once_with(dataset, ['volume_kg'])
+
+        connection = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=5)
+        try:
+            connection.request('GET', '/api/backtest/report')
+            response = connection.getresponse()
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.getheader('Content-Type'), 'application/zip')
+            self.assertIn('attachment', response.getheader('Content-Disposition'))
+            self.assertEqual(response.read(), contents)
+        finally:
+            connection.close()
+        # Replacing the workbook removes access to the previous workbook report.
+        with patch.object(self.app.Dataset, 'file', return_value=Imported()):
+            status, _ = self.request(
+                'POST', '/api/upload', body=b'synthetic-xlsx-body',
+                headers={'X-Filename':'other.xlsx',
+                         'X-Periodicity':'monthly'})
+        self.assertEqual(status, 200)
+        self.assertIsNone(self.app.state['benchmark_zip'])
+        self.assertEqual(self.request('GET', '/api/backtest/report')[0], 400)
+
+    def test_model_lab_rejects_invalid_metric_without_running(self):
+        import backtest_lab
+        class DatasetStub:
+            def for_market(self, market): return self
+            def for_grain(self, grain): return self
+        self.app.state['dataset'] = DatasetStub()
+        with patch.object(backtest_lab, 'run_backtest',
+                          side_effect=ValueError('شاخص فروش نامعتبر است.')) as run:
+            status, body = self.request('POST', '/api/backtest',
+                                        json.dumps({'metrics':['invalid']}).encode())
+        self.assertEqual(status, 400)
+        self.assertIn('error', body)
+        self.assertEqual(run.call_count, 1)
+
     def test_no_sample_still_allows_uploading(self):
         status, body = self.request("GET", "/api/data")
         self.assertEqual(status, 200)
