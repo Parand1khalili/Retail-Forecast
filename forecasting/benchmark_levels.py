@@ -31,7 +31,7 @@ def error_metrics(actual, predicted):
             'cells': len(a)}
 
 
-def _levels(dataset, origin):
+def _levels(dataset, origin, include_series=True):
     dimensions = dataset.all_dimensions()
     meta = dataset.meta
     n = len(meta)
@@ -54,7 +54,8 @@ def _levels(dataset, origin):
             groups[name].append(i)
         yield 'Brand', {k: np.asarray(v, dtype=int) for k,v in groups.items()}
     # Each series is an observed product/location cell, NOT an inferred SKU ID.
-    yield 'Series', {str(i): np.array([i]) for i in range(n)}
+    if include_series:
+        yield 'Series', {str(i): np.array([i]) for i in range(n)}
     recent = dataset.metric('volume_kg')[:, max(0, origin - 11):origin + 1]
     positive = (recent > 0).sum(axis=1)
     masks = [('Zero recent volume', positive == 0),
@@ -65,7 +66,8 @@ def _levels(dataset, origin):
         yield 'Demand pattern', sparse
 
 
-def compare_levels(dataset, actual, reference, challenger, origin, legacy=None):
+def compare_levels(dataset, actual, reference, challenger, origin, legacy=None,
+                   include_series=True):
     """Per-group reporting; no holdout labels are used to form groups."""
     actual = np.asarray(actual, float)
     reference = np.asarray(reference, float)
@@ -74,7 +76,7 @@ def compare_levels(dataset, actual, reference, challenger, origin, legacy=None):
     if any(x.shape != actual.shape for x in (reference, challenger, legacy)):
         raise ValueError('All benchmark forecasts must cover identical series.')
     reports = []
-    for level, groups in _levels(dataset, origin):
+    for level, groups in _levels(dataset, origin, include_series):
         for name, rows in groups.items():
             if not len(rows):
                 continue
