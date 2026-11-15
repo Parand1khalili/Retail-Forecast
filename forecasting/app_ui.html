@@ -688,9 +688,15 @@ function selectionEvidenceHtml(r){
     '<tr class="'+(x.name===winner?'selected':'')+'"><td>'+persian(i+1)+'</td><td>'+escapeHtml(evidenceMethod(x))+
     '<div class="recipe-code"><bdi dir="ltr">'+escapeHtml(x.name)+'</bdi></div></td><td>'+percent(x.wape)+'</td></tr>').join('');
   const runner=valid.find(x=>x.name!==winner),delta=runner&&rank===0?(runner.wape-valid[0].wape):null;
-  const explanation=rank===0&&runner
-    ?'Recipe منتخب در این مقایسه کمترین WAPE را داشته است.'+(delta!==null?' اختلاف آن با نزدیک‌ترین رقیب '+new Intl.NumberFormat('fa-IR',{maximumFractionDigits:2}).format(delta*100)+' واحد درصد است.':'')
-    :'Recipe منتخب با کمترین مجموع خطای مطلق در مقیاس شهر × محصول تعیین شده است.';
+  const decision=e.selection_decision||r.calibration?.selection_decision;
+  const guarded=decision?.mode==='guarded';
+  const explanation=guarded
+    ?(decision.reason==='stable improvement'
+       ?'این Recipe نسبت به مرجع آماری، کاهش خطای کافی و تکرارشونده در چند مبدأ نشان داده است.'
+       :'مدل‌های رقیب در تمام معیارهای پایداری قبول نشدند؛ Recipe آماری مرجع حفظ شده است.')
+    :(rank===0&&runner
+       ?'Recipe منتخب کمترین WAPE تاریخی را داشته است.'+(delta!==null?' اختلاف با رقیب بعدی '+new Intl.NumberFormat('fa-IR',{maximumFractionDigits:2}).format(delta*100)+' واحد درصد است.':'')
+       :'در حالت Global قبلی، انتخاب با کمترین مجموع خطای مطلق انجام شده است.');
   return '<section class="evidence"><div class="evidence-header"><div><h3>ارزیابی Recipe مبنا در کل Market</h3>'+
     '<p>مقایسه واقعی روش‌های قابل اجرا روی ماه‌های گذشته، با معیار WAPE؛ مقدار کمتر بهتر است.</p></div>'+
     '<span class="evidence-badge">'+persian(valid.length)+' روش مقایسه‌شده</span></div>'+
@@ -736,11 +742,18 @@ function categorySelectionHtml(r){
   const holdout=h&&h.global&&h.hierarchical?
     '<div class="detail"><strong>ارزیابی تاریخی مستقل (یک مبدأ)</strong><span>'+
     'مبدأ: '+escapeHtml(info.holdout_origin||'')+
-    ' · WAPE Global: '+percent(h.global.wape)+
-    ' · WAPE چندسطحی: '+percent(h.hierarchical.wape)+
+    ' · WAPE Global محافظه‌کار: '+(h.global.wape===null?'N/A':percent(h.global.wape))+
+    ' · WAPE چندسطحی: '+(h.hierarchical.wape===null?'N/A':percent(h.hierarchical.wape))+
+    (h.legacy_global?' · WAPE Global قبلی: '+(h.legacy_global.wape===null?'N/A':percent(h.legacy_global.wape)):'')+
     ' · گروه‌های بهتر/بدتر: '+persian(h.groups_improved)+' / '+persian(h.groups_deteriorated)+
     ' · این مبدأ برای انتخاب Recipe استفاده نشده است.</span></div>':
     '<div class="detail"><strong>Holdout مستقل</strong><span>به‌دلیل تاریخچه ناکافی، موجود نیست؛ نتایج انتخاب به‌معنای آزمون مستقل نیستند.</span></div>';
+  const levelSummary=info.evaluation_summary||{};
+  const levelRows=Object.entries(levelSummary).filter(([level])=>level!=='Series').map(([level,x])=>
+    '<div class="detail"><strong>Holdout · '+escapeHtml(level)+'</strong><span>'+
+    persian(x.groups)+' گروه · بهتر: '+persian(x.improved)+
+    ' · بدتر: '+persian(x.deteriorated)+
+    ' · بدون تغییر: '+persian(x.unchanged)+'</span></div>').join('');
   const selectedHoldout=info.selected_filter_holdout;
   let selectedScore='';
   if(selectedHoldout&&selectedHoldout.hierarchical){
@@ -760,7 +773,7 @@ function categorySelectionHtml(r){
     '<p>مدل‌ها روی کل سطح Market آموزش می‌بینند؛ Recipe هر دسته با شواهد انتخاب می‌شود یا از والد به ارث می‌رسد.</p>'+
     '<div class="details">'+global+
     '<div class="detail"><strong>مبدأهای انتخاب</strong><span>'+escapeHtml(origins)+'</span></div>'+
-    rows+selectedScore+holdout+'</div>'+
+    rows+selectedScore+holdout+levelRows+'</div>'+
     '<p class="help">WAPE گروه برای کل گروه محاسبه می‌شود. اگر SKU یا برند را فیلتر کرده‌اید، این عدد WAPE اختصاصی آن SKU نیست؛ برای تقاضای صفر، درصد خطا ممکن است تعریف‌نشده باشد.</p></section>';
 }
 function renderFuture(r){
