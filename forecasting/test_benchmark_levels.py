@@ -54,6 +54,35 @@ class BenchmarkTests(unittest.TestCase):
         zero=[r for r in sparse if r['group']=='Zero recent volume'][0]
         self.assertEqual(zero['series'],2)
 
+    def test_sku_identity_is_aggregated_across_cities_without_brand_collision(self):
+        class NamedDataset:
+            def __init__(self):
+                self.meta=np.asarray([
+                    ['All','Tehran','Company A','Shared','Item 1'],
+                    ['All','Shiraz','Company A','Shared','Item 1'],
+                    ['All','Tehran','Company B','Shared','Item 1'],
+                ],dtype=object)
+                self.volume=np.ones((3,36))
+            def all_dimensions(self):
+                return ['Market','City','Company','Brand','SKU']
+            def metric(self,metric):
+                return self.volume
+        d=NamedDataset()
+        results=compare_levels(d,np.array([10.,20.,30.]),
+                               np.array([8.,20.,30.]),
+                               np.array([10.,20.,30.]),26)
+        sku=[item for item in results if item['level']=='SKU']
+        brands=[item for item in results if item['level']=='Brand']
+        self.assertEqual(len(sku),2)
+        self.assertEqual(sorted(item['series'] for item in sku),[1,2])
+        self.assertEqual(sorted(item['actual'] for item in sku),[30.,30.])
+        self.assertEqual(len(brands),2)
+        self.assertEqual(sum(item['actual'] for item in brands),60.)
+        brief=compare_levels(d,np.array([10.,20.,30.]),
+                             np.array([8.,20.,30.]),
+                             np.array([10.,20.,30.]),26,include_series=False)
+        self.assertFalse(any(item['level'] in ('SKU','Series') for item in brief))
+
     def test_error_validation_and_breakdown(self):
         with self.assertRaises(ValueError):
             error_metrics([1.],[1.,2.])
