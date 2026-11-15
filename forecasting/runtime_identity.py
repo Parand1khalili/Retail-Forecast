@@ -9,7 +9,9 @@ def identity():
     folder = Path(__file__).resolve().parent
     paths = {name: str(folder / name) for name in (
         'app.py', 'app_core.py', 'schema.py', 'auto_engine.py', 'backtest.py',
-        'light_benchmark.py', 'runtime_identity.py', 'app_ui.html')}
+        'light_benchmark.py', 'runtime_preflight.py', 'runtime_identity.py',
+        'selection_core.py', 'category_selection.py', 'backtest_lab.py',
+        'full_export.py', 'app_ui.html')}
     digest = hashlib.sha256()
     for name, path in paths.items():
         digest.update(name.encode())
