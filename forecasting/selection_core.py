@@ -94,6 +94,47 @@ def candidate_registry(names):
     return [candidate_info(name).record() for name in unique]
 
 
+
+def eligible_candidates(by_origin, origins, metric, periodicity, row_count):
+    """Validate the executable forecast grid against the candidate registry.
+
+    The same candidates must be available at every selection origin, with
+    identical (series, 3 horizons) arrays. An invalid or incompatible method
+    cannot silently enter a model competition; rejected IDs are auditable.
+    """
+    if not origins or len(origins) != len(set(origins)):
+        raise ValueError('Selection origins must be unique and nonempty.')
+    if any(origin not in by_origin for origin in origins):
+        raise ValueError('Missing candidate forecasts for a selection origin.')
+    if metric not in _METRICS or periodicity not in _FREQUENCIES:
+        raise ValueError('Unknown forecast metric or periodicity.')
+    if row_count <= 0:
+        raise ValueError('No series to validate.')
+    shared = set.intersection(*(set(by_origin[origin]) for origin in origins))
+    rejected = {}
+    for name in sorted(set.union(*(set(by_origin[origin]) for origin in origins)) - shared):
+        rejected[name] = 'not available at every validation origin'
+    accepted = set()
+    for name in sorted(shared):
+        try:
+            spec = candidate_info(name)
+        except ValueError:
+            rejected[name] = 'unregistered candidate identifier'
+            continue
+        if metric not in spec.metrics or periodicity not in spec.periodicities:
+            rejected[name] = 'incompatible metric or periodicity'
+            continue
+        if any(origin + 1 < spec.min_history for origin in origins):
+            rejected[name] = 'insufficient history for candidate'
+            continue
+        if any(np.asarray(by_origin[origin][name]).shape != (row_count, 3) or
+               not np.isfinite(by_origin[origin][name]).all() or
+               (by_origin[origin][name] < 0).any() for origin in origins):
+            rejected[name] = 'invalid shape, negative value, NaN, or infinity'
+            continue
+        accepted.add(name)
+    return accepted, rejected
+
 def rolling_plan(cutoff, strategy='hierarchical', config=BacktestConfig(),
                  categories_available=True):
     """Strictly ordered origins with a wholly untouched later holdout.
