@@ -8,7 +8,7 @@ import hashlib,json,sys,time
 import numpy as np
 import pandas as pd
 from app_core import Dataset,baseline,DIMS,ROOT
-sys.path.insert(0,str(ROOT/'analysis/model_deps'))
+# Use packages from the active Python interpreter, not stale vendored wheels.
 from catboost import CatBoostRegressor
 from backtest import FeatureBuilder
 from light_benchmark import candidates as light_candidates
