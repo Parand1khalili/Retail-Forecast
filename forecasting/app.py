@@ -207,6 +207,17 @@ if __name__=='__main__':
         print("WARNING: EMRC Forecast CatBoost engine is not available in this Python.",flush=True)
         print(('Python: '+DEPENDENCIES['python_executable']).encode('ascii','backslashreplace').decode('ascii'),flush=True)
         print(('Install: '+DEPENDENCIES['install_command']).encode('ascii','backslashreplace').decode('ascii'),flush=True)
-    server=ThreadingHTTPServer((HOST,PORT),Handler)
+    try:
+        server=ThreadingHTTPServer((HOST,PORT),Handler)
+    except OSError as exc:
+        raise SystemExit(
+            f'EMRC Forecast cannot start: port {PORT} is already in use '
+            f'or unavailable ({exc}). Stop the verified previous app.py '
+            'instance, then run python app.py again. '
+            'To inspect the port owner in PowerShell: '
+            f'Get-NetTCPConnection -LocalPort {PORT} -State Listen'
+        ) from exc
     print(f'RA forecast: http://{HOST}:{PORT}',flush=True)
+    print(f'Active Python: {DEPENDENCIES["python_executable"]}',flush=True)
+    print(f'Project: {ROOT}',flush=True)
     server.serve_forever()
