@@ -12,6 +12,8 @@ sys.path.insert(0,str(ROOT/'analysis/model_deps'))
 from catboost import CatBoostRegressor
 from backtest import FeatureBuilder
 from light_benchmark import candidates as light_candidates
+from selection_core import (rolling_plan, candidate_registry, choose_champion)
+from benchmark_levels import compare_levels, summarize_levels
 from category_selection import (category_dimensions, select_category_overrides,
                                 forecast_with_recipes, series_recipes, holdout_comparison,
                                 filtered_holdout_summary)
@@ -23,7 +25,7 @@ PARAMS=dict(iterations=180,depth=5,learning_rate=.06,l2_leaf_reg=10,
             allow_writing_files=False,has_time=True,one_hot_max_size=32)
 VERSION='global-v3-frequencies-and-market-levels'
 SELECTION_VERSION='robust-price-volume-v3'
-POLICY_VERSION='shared-origin-category-v5-independent-holdout'
+POLICY_VERSION='robust-champion-v6-rolling-audit'
 
 def emit(*args):print(*args,flush=True)
 
@@ -202,7 +204,9 @@ def scores(y,p):
     den=y.sum()
     return {'wape':float(abs(y-p).sum()/den) if den else None,'bias':float((p-y).sum()/den) if den else None,'actual':float(den)}
 
-def select_recipes(d,metric,origins,by_origin):
+def select_recipes(d,metric,origins,by_origin,selection_mode='guarded'):
+    if selection_mode not in ('guarded','legacy'):
+        raise ValueError('Unknown model selection mode.')
     """Compare every candidate on the same completed targets and city cells.
 
     Models are trained only through their respective origin by candidates().
@@ -243,7 +247,11 @@ def select_recipes(d,metric,origins,by_origin):
         # minimizing city-cell absolute error is equivalent to pooled WAPE.
         ranked=sorted(candidate_scores,key=lambda row:(float('inf') if row['wape'] is None
                                                         else row['wape'],row['name']))
-        winner=min(pp,key=lambda name:np.abs(pp[name]-actual).sum())
+        losses={name:np.abs(pred-actual).sum(axis=0) for name,pred in pp.items()}
+        guarded_winner,decision=choose_champion(losses,bestbase)
+        winner=decision['legacy_best'] if selection_mode=='legacy' else guarded_winner
+        decision={**decision,'selected':winner,'mode':selection_mode,
+                  'reason':('legacy pooled WAPE winner' if selection_mode=='legacy' else decision['reason'])}
         by_month=[]
         for o in origins:
             observed=group(truth[:,o+h:o+h+1],d.meta,'city_segment')
@@ -255,6 +263,7 @@ def select_recipes(d,metric,origins,by_origin):
                              'actual':float(observed.sum()),'predicted':float(predicted.sum()),
                              'wape':detail['wape'],'absolute_error':float(np.abs(observed-predicted).sum())})
         policy[str(h)]={**recipes[winner],'name':winner,
+                        'selection_decision':decision,
                         'validation_wape':scores(actual,pp[winner])['wape'],
                         'validation_origins':[d.months[o] for o in origins],
                         'comparison_grain':grain,
@@ -262,7 +271,10 @@ def select_recipes(d,metric,origins,by_origin):
                         'selection_evidence':{
                             'metric':'pooled WAPE','grain':grain,
                             'scope':'all_series','horizon':h,'selected':winner,
-                            'candidate_scores':ranked,'origin_details':by_month
+                            'candidate_scores':ranked,
+                            'candidate_registry':candidate_registry(pp.keys()),
+                            'selection_decision':decision,
+                            'origin_details':by_month
                         }}
     return policy,validation
 
@@ -306,17 +318,9 @@ def forecast_component(d,metric,cutoff,name):
     return v['price']*vol
 
 def _selection_origins(d,cutoff,strategy):
-    """Selection folds precede the optional untouched holdout origin.
-
-    Global mode deliberately keeps the original two origins. Category mode
-    needs at least 30 observations for 2 selection folds plus 1 holdout; with
-    36+ observations it uses 3 selection origins. Short panels retain Global.
-    """
-    if strategy=='hierarchical' and category_dimensions(d) and cutoff>=29:
-        origins=[cutoff-9,cutoff-6]
-        if cutoff>=35:origins.insert(0,cutoff-12)
-        return origins,cutoff-3
-    return [o for o in [cutoff-6,cutoff-3] if o>=11],None
+    """Deterministic, frequency-independent folds measured in observed periods."""
+    plan=rolling_plan(cutoff,strategy,categories_available=bool(category_dimensions(d)))
+    return plan['selection'],plan['holdout']
 
 
 def dataset_policy(d,metric,cutoff,strategy='hierarchical'):
@@ -330,7 +334,16 @@ def dataset_policy(d,metric,cutoff,strategy='hierarchical'):
     if cached.exists():return json.loads(cached.read_text(encoding='utf-8'))
     origins,holdout=_selection_origins(d,cutoff,strategy)
     by_origin={o:candidates(d,metric,o) for o in origins}
-    policy,_=select_recipes(d,metric,origins,by_origin)
+    mode='guarded' if holdout is not None else 'legacy'
+    policy,_=select_recipes(d,metric,origins,by_origin,selection_mode=mode)
+    # The previous Global policy is computed on identical selection observations,
+    # without training any additional candidate model.
+    legacy_policy=None
+    if holdout is not None:
+        legacy_policy,_=select_recipes(d,metric,origins,by_origin,selection_mode='legacy')
+    policy['_legacy_global']={h:{'name':legacy_policy[h]['name'],
+                                 'components':legacy_policy[h]['components']}
+                               for h in ('1','2','3')} if legacy_policy is not None else None
     policy['_selection_origins']=[d.months[o] for o in origins]
     policy['_strategy']=strategy
     policy['_hierarchy']={'dimensions':category_dimensions(d),'overrides':{},
@@ -341,7 +354,14 @@ def dataset_policy(d,metric,cutoff,strategy='hierarchical'):
         policy['_hierarchy']=hierarchy
         # Independent audit is REPORT-ONLY: never gate or tune policies on it.
         held=candidates(d,metric,holdout)
-        policy['_holdout']=holdout_comparison(d,metric,holdout,held,policy,hierarchy)
+        policy['_holdout']=holdout_comparison(d,metric,holdout,held,policy,hierarchy,
+                                               legacy_recipes=legacy_policy)
+    policy['_validation']={'mode':mode,'selection_origins':policy['_selection_origins'],
+                            'holdout_origin':d.months[holdout] if holdout is not None else None,
+                            'independent':holdout is not None,
+                            'periodicity':d.periodicity,
+                            'period_months':d.period_months,
+                            'selection_policy_version':POLICY_VERSION}
     for h in ('1','2','3'):
         policy[h]['basis']='انتخاب تاریخی Global و در صورت شواهد پایدار، Recipe اختصاصی گروه؛ بدون آموزش جداگانه CatBoost برای هر SKU'
     cached.write_text(json.dumps(policy,ensure_ascii=False,indent=2),encoding='utf-8')
@@ -394,6 +414,8 @@ def automatic_forecast(d,metric,horizon,cutoff=None,strategy='hierarchical'):
         'holdout':(policy['_holdout'] or {}).get('horizons',{}).get(str(horizon)),
         'holdout_origin':(policy['_holdout'] or {}).get('origin'),
         'holdout_is_independent':bool(policy['_holdout']),
+        'evaluation_summary':(policy['_holdout'] or {}).get('horizons',{}).get(str(horizon),{}).get('level_summary'),
+        'selection_decision':selected.get('selection_decision'),
     }
     return output,recipe
 
