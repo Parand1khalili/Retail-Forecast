@@ -1,3 +1,34 @@
+## وقتی صفحه «Python فعال: نامشخص» نشان می‌دهد
+
+این پیام در نسخه‌های قبلی UI به معنی قطعی «CatBoost نصب نیست» نبود. ممکن است فایل HTML جدید توسط **سرور قدیمی که هنوز روی پورت 8765 در حال اجراست** سرو شده باشد، ولی آن سرور فیلد `runtime.dependencies` جدید را در پاسخ `/api/health` برنگرداند. حالت دیگر، ناموفق‌بودن درخواست `/api/health` است.
+
+برای تشخیص دقیق در PowerShell:
+
+~~~powershell
+Invoke-RestMethod 'http://127.0.0.1:8765/api/health' | ConvertTo-Json -Depth 6
+Get-NetTCPConnection -LocalPort 8765 -State Listen
+~~~
+
+اگر `runtime.dependencies` وجود ندارد، **سرور قدیمی/ناسازگار** در حال اجراست؛ نصب مجدد CatBoost را تکرار نکنید. در ترمینالی که نسخه قبلی `python app.py` اجرا شده با `Ctrl+C` آن را متوقف کنید. فقط اگر لازم بود مالک پورت را دقیق ببینید:
+
+~~~powershell
+Get-NetTCPConnection -LocalPort 8765 -State Listen | ForEach-Object {
+    Get-CimInstance Win32_Process -Filter "ProcessId=$($_.OwningProcess)" |
+        Select-Object ProcessId, CommandLine
+}
+~~~
+
+پس از تأیید اینکه پردازش واقعاً متعلق به همان اپلیکیشن است، آن را در ترمینال خودش ببندید. از حذف یا متوقف‌کردن پردازش ناشناس خودداری کنید. سپس در پوشه `forecasting` دستورهای زیر را اجرا کنید:
+
+~~~powershell
+python runtime_preflight.py
+python app.py
+~~~
+
+در مرورگر آدرس `http://127.0.0.1:8765` را با `Ctrl+F5` نوسازی کنید. اگر API وضعیت قابل دریافت نباشد، UI جدید پیام اتصال و کد خطای آن را جداگانه نمایش می‌دهد؛ اگر `catboost` واقعاً نصب نباشد، مسیر Python و دستور نصب همان Interpreter را می‌دهد.
+
+---
+
 ## رفع خطای CatBoost در VS Code و Windows
 
 اگر سرور با `python app.py` اجرا می‌شود ولی موقع Forecast پیام `No module named 'catboost'` می‌دهد، معمولاً `py -3` و `python` به **دو Python متفاوت** اشاره می‌کنند. نصب موفق با `py -3 -m pip` الزاماً به محیط `python app.py` منتقل نمی‌شود.
