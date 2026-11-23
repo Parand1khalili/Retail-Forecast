@@ -1,5 +1,5 @@
 <!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>پیش‌بینی فروش | Retail Audit</title>
+<title>EMRC Retail Forecast | Model Lab</title>
 <style>
 :root {
   color-scheme:light;
@@ -269,7 +269,7 @@ input[type=text]:focus,select:focus{border-color:var(--focus)}
 .runtime-alert strong{display:block;font-size:13px;margin-bottom:5px}
 .runtime-alert code{display:block;direction:ltr;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink);background:var(--surface);padding:9px 11px;border:1px solid var(--line);border-radius:6px;margin-top:7px;user-select:text}
 </style></head><body><div class="wrap">
-<header class="mast"><div class="header-content"><div><div class="eyebrow">EMRC · RETAIL AUDIT</div><h1>پیش‌بینی فروش</h1><p>از فایل فروش تا برآورد ماه آینده و مقایسه مستند روش‌های پیش‌بینی</p></div><div class="header-side"><strong>افق ۱ تا ۳ ماه</strong></div></div></header>
+<header class="mast"><div class="header-content"><div><div class="eyebrow">EMRC · RETAIL FORECAST / MODEL LAB</div><h1>پیش‌بینی فروش</h1><p>از فایل فروش تا برآورد ماه آینده و مقایسه مستند روش‌های پیش‌بینی</p></div><div class="header-side"><strong>افق ۱ تا ۳ ماه</strong></div></div></header>
 <div class="wizard-layout">
 <nav class="wizard-progress" aria-label="مراحل پیش‌بینی">
 <button class="progress-step current" data-step="0" type="button" aria-current="step"><span class="progress-number">01</span><span class="progress-label">ورود فایل</span></button>
@@ -311,6 +311,7 @@ input[type=text]:focus,select:focus{border-color:var(--focus)}
 </aside><main class="stage-card" id="main" data-panel="4" aria-live="polite" hidden><div class="result-actions"><button class="btn secondary" id="downloadBacktest" type="button" hidden>دانلود گزارش کامل (CSV / ZIP)</button><button class="btn secondary" id="exportFull" type="button">دانلود Excel کامل (همه سطوح و ۳ دوره)</button><button class="btn secondary" id="editSelection" type="button">تغییر فیلترها</button><button class="btn secondary" id="editTarget" type="button">تغییر ماه هدف</button><button class="btn secondary" id="newSource" type="button">فایل جدید</button></div><div id="results"><div class="empty"><div class="empty-visual">▤</div><strong>آمادهٔ ساخت پیش‌بینی</strong><p>فایل مستر، بازار و ماه هدف را انتخاب کنید؛ سپس پیش‌بینی و مدل منتخب اینجا نمایش داده می‌شود.</p></div></div></main></div>
 <div class="foot">نتایج بر پایه داده‌های گزارش Retail Audit محاسبه می‌شوند. واحدها از فایل ورودی خوانده می‌شوند و خطای تاریخی به معنی تضمین عملکرد آینده نیست.</div>
 </div><script>
+const forecastServerPort=window.location.port||'8766';
 const defaultDimNames=['City','Company','Brand','SubBrand','Subcategory','Subcategory2','Subcategory3','Subcategory4'];
 const defaultDimLabels=['شهر','کمپانی','برند','زیر‌برند','ساب‌کتگوری ۱','ساب‌کتگوری ۲','ساب‌کتگوری ۳','ساب‌کتگوری ۴'];
 let dimNames=[...defaultDimNames],labels=[...defaultDimLabels];
@@ -349,16 +350,16 @@ function showRuntimeStatus(health,requestError=''){
       title='اتصال به API وضعیت برنامه برقرار نشد.';
       detail='درخواست /api/health ناموفق بود: '+requestError+
         '؛ این خطا اثبات نمی‌کند که CatBoost نصب نیست.';
-      command='Get-NetTCPConnection -LocalPort 8765 -State Listen';
+      command='Get-NetTCPConnection -LocalPort '+forecastServerPort+' -State Listen';
       hint='در ترمینال VS Code سرور را بررسی کنید. از پوشه forecasting دستور python app.py را اجرا کنید و صفحه را با Ctrl+F5 نوسازی کنید.';
     }else if(!compatible){
       title='نسخه سرور اجراشده با رابط فعلی سازگار نیست.';
       const backend=(runtime?.paths?.app_py||runtime?.paths?.['app.py']||runtime?.root||'نامشخص');
       const python=runtime?.python||'نامشخص';
       detail='سرور پاسخ می‌دهد اما اطلاعات Dependency Check نسخه جدید را ارائه نمی‌کند. '+
-        'احتمالاً Python قدیمی همچنان روی پورت 8765 اجراست. مسیر سرور: '+backend+
+        'احتمالاً نسخه قدیمی Forecast یا سرویس دیگری روی پورت '+forecastServerPort+' اجراست. مسیر سرور: '+backend+
         ' · Python سرور: '+python;
-      command='Get-NetTCPConnection -LocalPort 8765 -State Listen';
+      command='Get-NetTCPConnection -LocalPort '+forecastServerPort+' -State Listen';
       hint='ترمینال اجرای قبلی app.py را با Ctrl+C متوقف کنید. بعد از Pull، در پوشه forecasting دوباره python app.py را اجرا و با Ctrl+F5 صفحه را بازخوانی کنید. فقط پردازشی را متوقف کنید که مطمئنید متعلق به همین برنامه است.';
     }else{
       title='پکیج‌های موتور در Python فعال بارگذاری نمی‌شوند.';
