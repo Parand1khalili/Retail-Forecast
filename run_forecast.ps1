@@ -1,4 +1,7 @@
-param([switch]$CheckOnly)
+param([switch]$CheckOnly, [ValidateRange(1024, 65535)][int]$Port = 8766)
+# This forecast service deliberately uses a different port from the Juice
+# Intelligence dashboard (8765). A separate port can be passed with -Port.
+$forecastUrl = "http://127.0.0.1:$Port"
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 # Prefer a usable local environment, but never silently launch an environment
@@ -45,19 +48,27 @@ Write-Host ('EMRC Forecast Python: ' + $pythonExe)
 if ($CheckOnly) { Write-Host 'EMRC_FORECAST_PREFLIGHT_OK'; exit 0 }
 $expected = (& $pythonExe -B (Join-Path $projectRoot 'forecasting\runtime_identity.py')) | ConvertFrom-Json
 function Read-Health {
-    try { Invoke-RestMethod 'http://127.0.0.1:8765/api/health' -TimeoutSec 2 } catch { $null }
+    try { Invoke-RestMethod ($forecastUrl + '/api/health') -TimeoutSec 2 } catch { $null }
 }
 function Is-Current($reply) {
     $reply -and $reply.service -eq 'ra-forecast' -and $reply.ready -and
     $reply.runtime.root -eq $expected.root -and $reply.runtime.source_id -eq $expected.source_id -and
-    $reply.runtime.python -eq $expected.python
+    $reply.runtime.python -eq $expected.python -and $reply.runtime.port -eq $Port
 }
 $reply = Read-Health
+# A foreign service may not expose /api/health at all. Detect the listener
+# before trying to launch another Python process and never kill it.
+if (-not $reply) {
+    $existingListener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+    if ($existingListener) {
+        throw "Port $Port is already occupied by another process. Do not stop an unknown server. Use run_forecast.ps1 -Port 8876 or inspect Get-NetTCPConnection -LocalPort $Port."
+    }
+}
 if ($reply -and -not (Is-Current $reply)) {
     if ($reply.runtime.root -ne $expected.root) {
-        throw 'Port 8765 belongs to an unverified or legacy server. Verify its Python process/project path and stop it before launching this project. It will not be reused or terminated automatically.'
+        throw "Port $Port belongs to an unverified/other server. Do not stop it. Choose another port with -Port 8876 or inspect the process owner."
     }
-    $listeners = Get-NetTCPConnection -LocalPort 8765 -State Listen
+    $listeners = Get-NetTCPConnection -LocalPort $Port -State Listen
     foreach ($ownerId in ($listeners.OwningProcess | Select-Object -Unique)) {
         $owner = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $ownerId)
         $appPath = Join-Path $projectRoot 'forecasting\app.py'
@@ -70,13 +81,14 @@ if ($reply -and -not (Is-Current $reply)) {
 }
 if (-not (Is-Current $reply)) {
     $scriptPath = Join-Path $projectRoot 'forecasting\app.py'
-    Start-Process -FilePath $pythonExe -ArgumentList ('-B "' + $scriptPath + '"') -WorkingDirectory $projectRoot -WindowStyle Hidden
+    Start-Process -FilePath $pythonExe -ArgumentList ('-B "' + $scriptPath + '" --port ' + $Port) -WorkingDirectory $projectRoot -WindowStyle Hidden
     for ($attempt=0; $attempt -lt 40; $attempt++) {
         Start-Sleep -Milliseconds 500
         $reply = Read-Health
         if (Is-Current $reply) { break }
     }
 }
-if (-not (Is-Current $reply)) { throw 'The current forecast app did not start on port 8765. Check the port owner and Python environment.' }
-try { Start-Process 'http://127.0.0.1:8765' }
-catch { Write-Output 'Open this address in your browser: http://127.0.0.1:8765' }
+if (-not (Is-Current $reply)) { throw "The current EMRC Forecast app did not start on port $Port. Check the port owner and Python environment." }
+Write-Host ('EMRC Retail Forecast URL: ' + $forecastUrl)
+try { Start-Process $forecastUrl }
+catch { Write-Output ('Open this address in your browser: ' + $forecastUrl) }
