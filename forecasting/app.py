@@ -1,8 +1,8 @@
-"""Run `python forecasting/app.py` then open http://127.0.0.1:8765 ."""
+"""Local EMRC forecasting service (separate from the Juice dashboard port)."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, unquote, parse_qs
-import json, threading, uuid, time, zipfile, os, sys
+import json, threading, uuid, time, zipfile, os, sys, argparse
 from runtime_preflight import diagnose, require_ready
 
 DEPENDENCIES = diagnose()
@@ -23,7 +23,20 @@ RUNTIME['paths'].update({'app.py': str(Path(__file__).resolve()),
                         'app_core.py': str(__import__('app_core').__file__),
                         'schema.py': str(__import__('schema').__file__)})
 
-HOST='127.0.0.1';PORT=8765
+HOST='127.0.0.1'
+DEFAULT_PORT=8766  # Juice Forecast Intelligence uses 8765 on the same workstation.
+PORT=DEFAULT_PORT
+
+def valid_port(value):
+    try:
+        port=int(value)
+    except (TypeError, ValueError) as exc:
+        raise argparse.ArgumentTypeError('Port must be an integer from 1024 to 65535.') from exc
+    if not 1024 <= port <= 65535:
+        raise argparse.ArgumentTypeError('Port must be between 1024 and 65535.')
+    return port
+
+RUNTIME['port']=PORT
 HERE=Path(__file__).parent
 UPLOADS=ROOT/'outputs/forecast_app/uploads'
 UPLOADS.mkdir(parents=True,exist_ok=True)
@@ -203,6 +216,11 @@ class Handler(BaseHTTPRequestHandler):
             self.answer({'error':str(e)},400)
 
 if __name__=='__main__':
+    parser=argparse.ArgumentParser(description='Local EMRC Retail Forecast and Model Lab server.')
+    parser.add_argument('--port',type=valid_port,default=DEFAULT_PORT,
+                        help='Forecast port; defaults to 8766 (Juice dashboard stays on 8765).')
+    PORT=parser.parse_args().port
+    RUNTIME['port']=PORT
     if not DEPENDENCIES['ready']:
         print("WARNING: EMRC Forecast CatBoost engine is not available in this Python.",flush=True)
         print(('Python: '+DEPENDENCIES['python_executable']).encode('ascii','backslashreplace').decode('ascii'),flush=True)
@@ -213,11 +231,13 @@ if __name__=='__main__':
         raise SystemExit(
             f'EMRC Forecast cannot start: port {PORT} is already in use '
             f'or unavailable ({exc}). Stop the verified previous app.py '
-            'instance, then run python app.py again. '
+            'instance, or select another port with python app.py --port 8876. '
+            'Do not terminate the Juice dashboard on port 8765. '
             'To inspect the port owner in PowerShell: '
             f'Get-NetTCPConnection -LocalPort {PORT} -State Listen'
         ) from exc
-    print(f'RA forecast: http://{HOST}:{PORT}',flush=True)
+    print(f'EMRC Retail Forecast (Model Lab): http://{HOST}:{PORT}',flush=True)
+    print(f'Service ID: ra-forecast | Port: {PORT} (Juice dashboard is separate)',flush=True)
     print(f'Active Python: {DEPENDENCIES["python_executable"]}',flush=True)
     print(f'Project: {ROOT}',flush=True)
     server.serve_forever()
