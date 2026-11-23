@@ -311,7 +311,6 @@ input[type=text]:focus,select:focus{border-color:var(--focus)}
 </aside><main class="stage-card" id="main" data-panel="4" aria-live="polite" hidden><div class="result-actions"><button class="btn secondary" id="downloadBacktest" type="button" hidden>دانلود گزارش کامل (CSV / ZIP)</button><button class="btn secondary" id="exportFull" type="button">دانلود Excel کامل (همه سطوح و ۳ دوره)</button><button class="btn secondary" id="editSelection" type="button">تغییر فیلترها</button><button class="btn secondary" id="editTarget" type="button">تغییر ماه هدف</button><button class="btn secondary" id="newSource" type="button">فایل جدید</button></div><div id="results"><div class="empty"><div class="empty-visual">▤</div><strong>آمادهٔ ساخت پیش‌بینی</strong><p>فایل مستر، بازار و ماه هدف را انتخاب کنید؛ سپس پیش‌بینی و مدل منتخب اینجا نمایش داده می‌شود.</p></div></div></main></div>
 <div class="foot">نتایج بر پایه داده‌های گزارش Retail Audit محاسبه می‌شوند. واحدها از فایل ورودی خوانده می‌شوند و خطای تاریخی به معنی تضمین عملکرد آینده نیست.</div>
 </div><script>
-const forecastServerPort=window.location.port||'8766';
 const defaultDimNames=['City','Company','Brand','SubBrand','Subcategory','Subcategory2','Subcategory3','Subcategory4'];
 const defaultDimLabels=['شهر','کمپانی','برند','زیر‌برند','ساب‌کتگوری ۱','ساب‌کتگوری ۲','ساب‌کتگوری ۳','ساب‌کتگوری ۴'];
 let dimNames=[...defaultDimNames],labels=[...defaultDimLabels];
@@ -338,6 +337,7 @@ const status=(msg,kind='info')=>{
   el('status').className='status '+(kind===true?'error':kind);
 };
 function showRuntimeStatus(health,requestError=''){
+  const forecastServerPort=(typeof window!=='undefined'&&window.location?.port)||'8766';
   const runtime=health?.runtime,report=runtime?.dependencies;
   const compatible=health?.service==='ra-forecast' &&
     report && typeof report.ready==='boolean' &&
