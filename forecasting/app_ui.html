@@ -495,6 +495,30 @@ function renderSchemaPreview(schema){
       'ابعاد بالا در محاسبات استفاده می‌شوند. برای دیدن و اصلاح سرتیترهای واقعی، فایل Excel را وارد کنید.';
   }
   preview.append(cap);
+  const audit=schema?.integrity;
+  if(audit){
+    const line=document.createElement('div');line.className='schema-caption';
+    line.textContent='کنترل صحت Import: تطبیق مجموع Master و پنل در '+audit.reconciliation.length+
+      ' سطح بازار/محصول · '+audit.sheets.length+' شیت فروش · '+audit.identical_overlaps.length+
+      ' هم‌پوشانی کاملاً یکسان (بدون دوباره‌شماری).';
+    preview.append(line);
+    const details=document.createElement('details');details.className='schema-caption';
+    const summary=document.createElement('summary');summary.textContent='جزئیات کنترل داده و موارد خارج از محاسبه';details.append(summary);
+    for(const sh of audit.sheets){
+      const p=document.createElement('p');p.textContent=sh.sheet+' · '+sh.source_sales_rows+' ردیف فروش'+
+        (sh.unavailable_periods.length?' · دوره‌های بدون داده: '+sh.unavailable_periods.join('، '):'')+
+        (Object.keys(sh.excluded_measures).length?' · شاخص‌های خارج از محاسبه: '+Object.entries(sh.excluded_measures).map(([k,v])=>k+' ('+v+')').join('، '):'')+
+        (sh.ignored_columns.length?' · ستون‌های غیر دوره‌ای: '+sh.ignored_columns.join('، '):'')+
+        (sh.excluded_dimensions.length?' · ابعاد تجمیع‌شده با انتخاب کاربر: '+sh.excluded_dimensions.join('، '):'');
+      details.append(p);
+    }
+    for(const sh of audit.skipped_sheets){
+      const p=document.createElement('p');p.textContent=sh.sheet+' · شیت بدون جدول فروش قابل تشخیص؛ خارج از محاسبه';details.append(p);
+    }
+    const download=document.createElement('button');download.type='button';download.className='btn secondary';download.textContent='دانلود گزارش کنترل داده (JSON)';
+    download.onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(audit,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='emrc_data_integrity.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+    details.append(download);preview.append(details);
+  }
 }
 function setData(next,initial=false){
   // A late startup response must not overwrite an import or frequency choice.
