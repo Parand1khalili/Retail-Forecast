@@ -88,12 +88,22 @@ class FeatureBuilder:
             num['volume_latest' if lag==0 else f'volume_minus_{lag}']=self.y[:,t-lag] if t>=lag else np.zeros(n)
         for w in [3,6,12]:
             z=hist[:,-w:];num[f'mean_{w}']=z.mean(1);num[f'std_{w}']=z.std(1);num[f'positive_count_{w}']=(z>0).sum(1)
-        scale=np.maximum.reduce([num['mean_3'],num['mean_12']*.1,np.ones(n)])
-        num['recent_growth']=np.divide(num['mean_3']-hist[:,-6:-3].mean(1),scale)
-        num['last_change']=(latest-hist[:,-2])/scale
-        num['positive_count_all']=(hist>0).sum(1)
         pos=hist>0;ever=pos.any(1)
-        num['months_since_positive']=np.where(ever,t-np.max(np.where(pos,np.arange(t+1),-1),axis=1),t+1)
+        last_positive=np.max(np.where(pos,np.arange(t+1),-1),axis=1)
+        # A scale has the same units as sales: S(c*y)=c*S(y). Retain the
+        # original recent-window definition without a fixed one-unit floor.
+        # Dormant series with no recent positives use their last observed
+        # positive sale, not a future target or a scale borrowed from another SKU.
+        scale=np.maximum(num['mean_3'],.1*num['mean_12'])
+        dormant=(scale==0)&ever
+        scale[dormant]=hist[np.flatnonzero(dormant),last_positive[dormant]]
+        # Never-observed series have scale zero and zero normalized changes;
+        # both ML training paths exclude them via ever, and prediction is zero.
+        num['recent_growth']=np.divide(num['mean_3']-hist[:,-6:-3].mean(1),
+                                      scale,out=np.zeros(n),where=scale>0)
+        num['last_change']=np.divide(latest-hist[:,-2],scale,out=np.zeros(n),where=scale>0)
+        num['positive_count_all']=pos.sum(1)
+        num['months_since_positive']=np.where(ever,t-last_positive,t+1)
         num['months_since_first_positive']=np.where(ever,t-np.argmax(pos,axis=1),0)
         target=self.dates[t]+h*self.period_months
         num['target_month']=np.full(n,target.month)
@@ -108,8 +118,14 @@ class FeatureBuilder:
             par=ar[:,:t+1]
             num[name+'_latest']=par[:,-1]
             num[name+'_mean3']=par[:,-3:].mean(1)
-            num[name+'_growth3']=np.divide(par[:,-3:].mean(1),np.maximum(par[:,-6:-3].mean(1),1))-1
-            num['share_of_'+name]=latest/np.maximum(par[:,-1],1)
+            # Use the actual positive denominator, even below one sales unit.
+            # Undefined ratios (zero parent total / prior sales) are numeric NaN,
+            # which CatBoost can learn as missing, not fabricated zero growth/share.
+            previous=par[:,-6:-3].mean(1)
+            num[name+'_growth3']=np.divide(num[name+'_mean3']-previous,previous,
+                                          out=np.full(n,np.nan),where=previous>0)
+            num['share_of_'+name]=np.divide(latest,par[:,-1],
+                                           out=np.full(n,np.nan),where=par[:,-1]>0)
         ph=self.price[:,:t+1]
         for lag in [0,1,2]:num[f'price_minus_{lag}']=ph[:,t-lag]
         pcount=np.isfinite(ph[:,-3:]).sum(1)
@@ -139,7 +155,7 @@ def baseline_forecasts(y,origin):
 
 def ml_forecasts(builder,origin,save=False):
     n=len(builder.meta);out={name:np.zeros((n,3)) for name in ML};audit=[];importance=[]
-    signature=hashlib.sha256(json.dumps(PRESETS,sort_keys=True).encode()+builder.y[:,:origin+1].tobytes()+builder.meta.to_csv(index=False).encode()).hexdigest()[:12]
+    signature=hashlib.sha256(b'parent-ratios-scale-v2'+json.dumps(PRESETS,sort_keys=True).encode()+builder.y[:,:origin+1].tobytes()+builder.meta.to_csv(index=False).encode()).hexdigest()[:12]
     cache_dir=OUT/'fit_cache';cache_dir.mkdir(exist_ok=True)
     for h in [1,2,3]:
         xparts=[];scales=[];ys=[];latest=[]
