@@ -363,7 +363,7 @@ def dataset_policy(d,metric,cutoff,strategy='hierarchical'):
     digest=hashlib.sha256(VERSION.encode()+POLICY_VERSION.encode()+metric.encode()+strategy.encode()+
         json.dumps(configuration['configuration'],sort_keys=True).encode()+
         json.dumps(ChampionGuard().__dict__,sort_keys=True).encode()+
-        data_identity(d,0,cutoff)).hexdigest()[:24]
+        json.dumps(PARAMS,sort_keys=True).encode()+data_identity(d,0,cutoff)).hexdigest()[:24]
     cached=OUT/'runtime_policies'/f'{digest}.json';cached.parent.mkdir(exist_ok=True)
     if cached.exists():return json.loads(cached.read_text(encoding='utf-8'))
     origins,holdout=configuration['selection'],configuration['holdout']
@@ -414,7 +414,8 @@ def effective_policy(d, metric, cutoff, strategy='hierarchical'):
     if not signal['active']:
         return normal
     fingerprint = hashlib.sha256(PRICE_POLICY_VERSION.encode()+POLICY_VERSION.encode()+
-        VERSION.encode()+strategy.encode()+data_identity(d,0,cutoff)).hexdigest()[:24]
+        VERSION.encode()+strategy.encode()+json.dumps(PARAMS,sort_keys=True).encode()+
+        data_identity(d,0,cutoff)).hexdigest()[:24]
     folder = OUT/'price_regime_policies'
     folder.mkdir(parents=True,exist_ok=True)
     cached = folder/f'{fingerprint}.json'
@@ -497,7 +498,7 @@ def automatic_forecast(d,metric,horizon,cutoff=None,strategy='hierarchical',
         'groups_considered':hierarchy.get('groups_considered',0),
         'groups_selected':len(hierarchy.get('overrides',{}).get(str(horizon),[])),
         'global_recipe':selected['name'],'usage':usage,
-        'selection_origins':policy['_selection_origins'],
+        'selection_origins':selected.get('validation_origins',policy['_selection_origins']),
         'holdout':(policy['_holdout'] or {}).get('horizons',{}).get(str(horizon)),
         'holdout_origin':(policy['_holdout'] or {}).get('origin'),
         'holdout_is_independent':bool(policy['_holdout']),
@@ -529,6 +530,7 @@ def _selected_category_explanation(d,metric,horizon,mask,strategy,recipe):
                     else ('Category' if active_path else 'Global / inherited'))
             selected[key]={'recipe':item['name'],'path':active_path,
                            'source':origin,
+                           'selection_scope':item.get('selection_scope','ordinary_selection'),
                            'series':0,'group_selection_metrics':item.get('evidence',{})}
         selected[key]['series']+=1
     return {**summary,'selected_groups':sorted(selected.values(),
