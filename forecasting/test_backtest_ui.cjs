@@ -79,6 +79,18 @@ sandbox.labGroupLevels();
 assert.match(nodes.labGroupTable.innerHTML,/SKU-12/);
 assert.match(nodes.labGroupTable.innerHTML,/N\/A/);
 
+
+const nestedAudit=runWithData({...fake,evaluation_type:'nested_walk_forward',summaries:[{
+  metric:'volume_kg',horizon:'1',audit_type:'nested_walk_forward',origin:'2024-01 … 2025-01',
+  origin_count:5,baseline_wape:.25,global_wape:.2,hierarchical_wape:.1,
+  relative_reduction_vs_baseline:.6
+}],group_preview:[{...fake.group_preview[0],baseline_wape:'.25',relative_reduction_vs_baseline:'.6'}]});
+assert.match(nestedAudit.nodes.results.innerHTML,/Nested Walk-Forward/);
+assert.match(nestedAudit.nodes.results.innerHTML,/Last Observation/);
+assert.match(nestedAudit.nodes.results.innerHTML,/60.0%/);
+assert.match(nestedAudit.nodes.labGroupTable.innerHTML,/25.0%/);
+assert.doesNotMatch(nestedAudit.nodes.results.innerHTML,/این آزمون بازاجرای کامل برنامه در هر تاریخ گذشته نیست/);
+
 const noHoldout = {...fake, summaries:[
   {metric:'volume_kg',horizon:'1',audit_type:'no_independent_holdout',
    origin:'',legacy_global_wape:null,global_wape:null,hierarchical_wape:null}

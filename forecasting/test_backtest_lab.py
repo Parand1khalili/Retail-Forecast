@@ -123,7 +123,6 @@ class RealPolicyIntegrationTests(unittest.TestCase):
         from pathlib import Path
         from app_core import Dataset, DIMS
         import auto_engine
-        import evaluate_hierarchy
 
         dims = DIMS + ['Market', 'SKU']
         meta = []
@@ -151,20 +150,24 @@ class RealPolicyIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder, \
              patch.object(auto_engine, 'OUT', Path(folder)), \
              patch.object(auto_engine, 'candidates', side_effect=fake_candidates), \
-             patch.object(evaluate_hierarchy, 'candidates', side_effect=fake_candidates):
+             patch.object(auto_engine, 'forecast_component',
+                          side_effect=lambda dataset, metric, origin, name: fake_candidates(dataset, metric, origin)[name]):
             response, zip_bytes = backtest_lab.run_backtest(d, ['volume_kg'])
         self.assertEqual(len(response['summaries']), 3)
         self.assertTrue(response['holdout_available'])
         self.assertTrue(any(x['level']=='SKU' for x in response['group_totals']))
         self.assertTrue(any(x['level']=='Subcategory' for x in response['group_totals']))
         for item in response['summaries']:
-            self.assertEqual(item['audit_type'], 'untouched_holdout')
+            self.assertEqual(item['audit_type'], 'nested_walk_forward')
+            self.assertEqual(item['origin_count'], 6)
             self.assertAlmostEqual(item['global_wape'], .1)
-            self.assertAlmostEqual(item['hierarchical_wape'], 0.)
-            self.assertGreater(item['relative_reduction_vs_legacy'], 0)
+            self.assertAlmostEqual(item['hierarchical_wape'], .1*4/6)
+            self.assertEqual(item['baseline_wape'], 0.)
+            self.assertIsNone(item['relative_reduction_vs_baseline'])
         with ZipFile(BytesIO(zip_bytes)) as archive:
             self.assertIsNone(archive.testzip())
             details = archive.read('volume_kg_by_group.csv').decode('utf-8-sig')
+            self.assertIn('volume_kg_by_origin.csv', archive.namelist())
         self.assertIn('Subcategory', details)
         self.assertIn('SKU', details)
 

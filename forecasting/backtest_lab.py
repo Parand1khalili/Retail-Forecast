@@ -1,6 +1,6 @@
 """In-app, local-only backtesting of the current EMRC forecasting policies.
 
-Uses the exact same independent holdout as the command-line audit. The source
+Replays the production policies at multiple historical cutoffs. The source
 workbook is not modified, raw observations are not returned to the browser,
 and temporary CSV files are deleted after an in-memory ZIP is created.
 """
@@ -14,7 +14,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from zipfile import ZIP_DEFLATED, ZipFile
 
-from evaluate_hierarchy import report
+from nested_backtest import report
 
 METRICS = ('volume_kg', 'value_1000_toman')
 MAX_PREVIEW_PER_LEVEL = 15
@@ -23,7 +23,8 @@ PREVIEW_FIELDS = (
     'global_wape', 'hierarchical_wape', 'legacy_global_wape',
     'relative_reduction_vs_legacy', 'improvement_vs_legacy',
     'global_mae', 'hierarchical_mae', 'global_bias', 'hierarchical_bias',
-    'live_legacy_global_wape', 'live_global_wape', 'live_hierarchical_wape',
+    'baseline_wape', 'relative_reduction_vs_baseline', 'improvement_vs_baseline',
+    'origin_count', 'live_legacy_global_wape', 'live_global_wape', 'live_hierarchical_wape',
     'live_relative_reduction_vs_legacy', 'live_improvement_vs_legacy',
 )
 
@@ -36,7 +37,7 @@ def _top_groups(path, metric, previews, counters, tallies):
             key = (metric, row['horizon'], row['level'])
             stats = tallies[key]
             stats['groups'] += 1
-            result = row.get('improvement_vs_legacy', 'unchanged')
+            result = row.get('improvement_vs_baseline') or row.get('improvement_vs_legacy', 'unchanged')
             if result in ('improved', 'deteriorated', 'unchanged'):
                 stats[result] += 1
             if row['level'] == 'Series':
@@ -91,6 +92,9 @@ def run_backtest(dataset, metrics):
                 rows = report(dataset, metric, summary_path, detailed_output=details_path)
                 summaries.extend(rows)
                 output.write(summary_path, f'{metric}_summary.csv')
+                origin_path = root / f'{metric}_by_origin.csv'
+                if origin_path.exists():
+                    output.write(origin_path, origin_path.name)
                 if details_path.exists():
                     output.write(details_path, f'{metric}_by_group.csv')
                     _top_groups(details_path, metric, previews, counters, tallies)
@@ -117,7 +121,8 @@ def run_backtest(dataset, metrics):
         'group_totals': group_totals,
         'group_preview': displayed,
         'preview_limit': MAX_PREVIEW_PER_LEVEL,
-        'holdout_available': any(row['audit_type'] == 'untouched_holdout'
+        'evaluation_type': 'nested_walk_forward' if any(row.get('audit_scope') == 'nested_walk_forward' for row in summaries) else 'locked_recipes',
+        'holdout_available': any(row['audit_type'] in ('untouched_holdout', 'nested_walk_forward')
                                  for row in summaries),
         'description': 'گزارش کامل تمام SKU/Seriesها در ZIP موجود است؛ جدول صفحه فقط بزرگ‌ترین گروه‌ها را نشان می‌دهد.',
     }, archive.getvalue()

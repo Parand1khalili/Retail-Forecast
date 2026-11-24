@@ -31,7 +31,7 @@ def error_metrics(actual, predicted):
             'cells': len(a)}
 
 
-def _levels(dataset, origin, include_series=True):
+def _levels(dataset, origin, include_series=True, include_individual=True):
     dimensions = dataset.all_dimensions()
     meta = dataset.meta
     n = len(meta)
@@ -83,7 +83,8 @@ def _levels(dataset, origin, include_series=True):
             if groups:
                 yield level, {k: np.asarray(v, dtype=int) for k, v in groups.items()}
         # Each Series remains the original observed product/location cell.
-        yield 'Series', {str(i): np.array([i]) for i in range(n)}
+        if include_individual:
+            yield 'Series', {str(i): np.array([i]) for i in range(n)}
     recent = dataset.metric('volume_kg')[:, max(0, origin - 11):origin + 1]
     positive = (recent > 0).sum(axis=1)
     masks = [('Zero recent volume', positive == 0),

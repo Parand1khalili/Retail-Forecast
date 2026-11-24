@@ -303,7 +303,7 @@ input[type=text]:focus,select:focus{border-color:var(--focus)}
 <option value="global">فقط Global Market (مقایسه با روش قبلی)</option></select>
 <p class="help">CatBoost همچنان روی داده‌های کل Market آموزش می‌بیند؛ در حالت چندسطحی، Recipe برای شاخه‌های دارای شواهد کافی جدا انتخاب می‌شود.</p></div>
 <div class="model-lab-intro"><strong>آزمایش مقایسه‌ای مدل‌ها (Model Lab)</strong>
-<p>در این آزمون هر سه روش Legacy Global، Guarded Global و Hierarchical روی یک Holdout تاریخی یکسان مقایسه می‌شوند. آزمون برای کل Market و سطح تجمیع انتخاب‌شده انجام می‌شود؛ فیلترهای برند و SKU فقط در پیش‌بینی عادی کاربرد دارند.</p>
+<p>در این آزمون سیاست‌های اجرایی Global و Hierarchical و مبنای آخرین دوره در چند مبدأ تاریخی یکسان بازاجرا می‌شوند. آزمون برای کل Market و سطح تجمیع انتخاب‌شده انجام می‌شود؛ فیلترهای برند و SKU فقط در پیش‌بینی عادی کاربرد دارند.</p>
 <div class="field"><label for="backtestMetric">شاخص‌های قابل‌آزمایش</label><select id="backtestMetric">
 <option value="both">هر دو: حجم و ارزش فروش</option><option value="volume_kg">فقط حجم فروش</option>
 <option value="value_1000_toman">فقط ارزش فروش</option></select></div></div>
@@ -898,11 +898,12 @@ function labGroupRows(){
   if(!latestLabData)return;
   const metric=el('labMetricView').value,horizon=Number(el('labHorizonView').value);
   const level=el('labLevelView').value;
+  const nested=latestLabData.evaluation_type==='nested_walk_forward';
   const group=latestLabData.group_totals.find(item=>item.metric===metric&&item.horizon===horizon&&item.level===level);
   const rows=latestLabData.group_preview.filter(item=>item.metric===metric&&Number(item.horizon)===horizon&&item.level===level);
   el('labGroupCount').textContent=group?
     persian(group.groups)+' گروه · '+persian(group.improved)+' بهتر · '+persian(group.deteriorated)+
-    ' بدتر · '+persian(group.unchanged)+' بدون تغییر، نسبت به Legacy Global':'گروهی برای این انتخاب موجود نیست.';
+    ' بدتر · '+persian(group.unchanged)+' بدون تغییر، نسبت به '+(nested?'آخرین دوره':'Legacy Global'):'گروهی برای این انتخاب موجود نیست.';
   if(!rows.length){
     el('labGroupTable').innerHTML='<div class="lab-empty">برای این سطح دادهٔ Holdout موجود نیست. در صورت کافی‌بودن تاریخچه، گروه‌ها در فایل CSV دانلودی هم ارائه می‌شوند.</div>';
     return;
@@ -910,19 +911,20 @@ function labGroupRows(){
   const live=rows.some(row=>row.live_hierarchical_wape!==undefined&&row.live_hierarchical_wape!==null);
   const body=rows.map(row=>
     '<tr><td>'+escapeHtml(row.group)+'</td><td>'+labNumber(row.series)+'</td>'+
-    '<td>'+labNumber(row.actual)+'</td><td>'+labPercent(row.legacy_global_wape)+'</td>'+
+    '<td>'+labNumber(row.actual)+'</td><td>'+labPercent(nested?row.baseline_wape:row.legacy_global_wape)+'</td>'+
     '<td>'+labPercent(row.global_wape)+'</td><td>'+labPercent(row.hierarchical_wape)+'</td>'+
-    '<td>'+labPercent(row.relative_reduction_vs_legacy)+'</td>'+(live?'<td>'+labPercent(row.live_legacy_global_wape)+'</td><td>'+labPercent(row.live_hierarchical_wape)+'</td>':'')+'</tr>'
+    '<td>'+labPercent(nested?row.relative_reduction_vs_baseline:row.relative_reduction_vs_legacy)+'</td>'+(live?'<td>'+labPercent(row.live_legacy_global_wape)+'</td><td>'+labPercent(row.live_hierarchical_wape)+'</td>':'')+'</tr>'
   ).join('');
   el('labGroupTable').innerHTML='<div class="lab-table-wrap"><table class="lab-table">'+
-    '<thead><tr><th>گروه</th><th>سری‌ها</th><th>مجموع واقعی</th><th>WAPE قبلی</th>'+
-    '<th>WAPE Global محافظه‌کار</th><th>WAPE چندسطحی</th><th>کاهش خطای مطلق نسبت به قبلی</th>'+(live?'<th>WAPE سیاست اجرایی قبلی</th><th>WAPE سیاست اجرایی جدید</th>':'')+'</tr></thead>'+
+    '<thead><tr><th>گروه</th><th>'+(nested?'سری‌ها (حداکثر در هر مبدأ)':'سری‌ها')+'</th><th>مجموع واقعی</th><th>'+(nested?'WAPE آخرین دوره':'WAPE قبلی')+'</th>'+
+    '<th>'+(nested?'WAPE Global اجرایی':'WAPE Global محافظه‌کار')+'</th><th>WAPE چندسطحی</th><th>کاهش خطای مطلق نسبت به '+(nested?'مبنا':'قبلی')+'</th>'+(live?'<th>WAPE سیاست اجرایی قبلی</th><th>WAPE سیاست اجرایی جدید</th>':'')+'</tr></thead>'+
     '<tbody>'+body+'</tbody></table></div>';
 }
 function renderBacktest(result){
   latestLabData=result;
   const metrics=result.metrics||[],rows=result.summaries||[];
-  const completed=rows.filter(item=>item.audit_type==='untouched_holdout');
+  const nested=result.evaluation_type==='nested_walk_forward';
+  const completed=rows.filter(item=>item.audit_type==='untouched_holdout'||item.audit_type==='nested_walk_forward');
   const total=completed.length;
   const guardRows=completed.filter(item=>item.metric==='value_1000_toman'&&item.price_guard_active_at_holdout===true);
   const guardNote=guardRows.length?
@@ -938,21 +940,21 @@ function renderBacktest(result){
     liveRows.map(item=>'<tr><td>H'+escapeHtml(item.horizon)+'</td><td>'+labPercent(item.previous_live_wape)+'</td><td>'+labPercent(item.live_global_wape)+'</td><td>'+labPercent(item.live_hierarchical_wape)+'</td><td>'+labPercent(item.live_relative_reduction_vs_previous)+'</td><td>'+labNumber(item.live_shock_events)+'</td><td>'+labNumber(item.live_specialist_series)+'</td></tr>').join('')+
     '</tbody></table></div></section>':'';
   const tableRows=rows.map(item=>{
-    const available=item.audit_type==='untouched_holdout';
+    const available=item.audit_type==='untouched_holdout'||item.audit_type==='nested_walk_forward';
     return '<tr><td>'+escapeHtml(labMetricName(item.metric))+'</td>'+
       '<td>H'+escapeHtml(item.horizon)+'</td>'+
-      '<td>'+ (available?labPercent(item.legacy_global_wape):'—')+'</td>'+
+      '<td>'+ (available?labPercent(nested?item.baseline_wape:item.legacy_global_wape):'—')+'</td>'+
       '<td>'+ (available?labPercent(item.global_wape):'—')+'</td>'+
       '<td>'+ (available?labPercent(item.hierarchical_wape):'—')+'</td>'+
-      '<td>'+ (available?labPercent(item.relative_reduction_vs_legacy):'—')+'</td>'+
-      '<td>'+ (available?escapeHtml(item.origin):'بدون Holdout مستقل')+'</td></tr>';
+      '<td>'+ (available?labPercent(nested?item.relative_reduction_vs_baseline:item.relative_reduction_vs_legacy):'—')+'</td>'+
+      '<td>'+ (available?escapeHtml(item.origin)+(nested?' · '+labNumber(item.origin_count)+' مبدأ':''):'بدون Holdout مستقل')+'</td></tr>';
   }).join('');
   const charts=metrics.map(metric=>{
     const valid=completed.filter(item=>item.metric===metric);
     return '<section class="evidence"><h3>'+escapeHtml(labMetricName(metric))+'</h3>'+
       (valid.length?valid.map(item=>{
-        const values=[{name:'Legacy Global',value:item.legacy_global_wape,style:'legacy'},
-          {name:'Guarded Global',value:item.global_wape,style:'guarded'},
+        const values=[{name:nested?'Last Observation':'Legacy Global',value:nested?item.baseline_wape:item.legacy_global_wape,style:'legacy'},
+          {name:nested?'Global':'Guarded Global',value:item.global_wape,style:'guarded'},
           {name:'Hierarchical',value:item.hierarchical_wape,style:'hierarchical'}];
         const finite=values.map(item=>Number(item.value)).filter((v,i)=>values[i].value!==null&&Number.isFinite(v));
         const largest=Math.max(1e-9,...finite);
@@ -964,13 +966,13 @@ function renderBacktest(result){
             '<span>'+labPercent(p.value)+'</span></div>';
         }).join('');
         return '<div class="lab-horizon"><h4>افق H'+escapeHtml(item.horizon)+
-          ' · مبدأ آزمون: <bdi dir="ltr">'+escapeHtml(item.origin)+'</bdi></h4>'+
+          (nested?' · '+labNumber(item.origin_count)+' مبدأ آزمون: ':' · مبدأ آزمون: ')+'<bdi dir="ltr">'+escapeHtml(item.origin)+'</bdi></h4>'+
           '<div class="lab-bars">'+lines+'</div></div>';
       }).join(''):'<div class="lab-empty">این داده تاریخچه کافی برای Holdout مستقل ندارد؛ نتیجه‌ای به‌عنوان دقت مستقل گزارش نمی‌شود.</div>')+
       '</section>';
   }).join('');
   el('results').innerHTML='<div class="resulthead"><div>'+
-    '<div class="eyebrow">EMRC · MODEL LAB</div><h2>مقایسه تاریخی Recipeها</h2>'+
+    '<div class="eyebrow">EMRC · MODEL LAB</div><h2>'+(nested?'Nested Walk-Forward · بازاجرای تاریخی برنامه':'مقایسه تاریخی Recipeها')+'</h2>'+
     '<div class="source">'+escapeHtml(result.source)+' · Market: '+escapeHtml(result.market)+
     ' · '+(result.periodicity==='bimonthly'?'دوماهه':'ماهانه')+'</div></div>'+
     '<span class="badge">'+(total?'ارزیابی مستقل انجام شد':'Holdout کافی نیست')+'</span></div>'+
@@ -978,13 +980,13 @@ function renderBacktest(result){
     '<span>'+persian(result.periods)+' دوره تاریخی</span>'+
     '<span>'+persian(metrics.length)+' شاخص</span><span>افق‌های H1 / H2 / H3</span></div>'+
     '<div class="model-lab-intro"><strong>این جدول چه چیزی را مقایسه می‌کند؟</strong>'+
-    '<p>سه سیاست انتخاب Recipe ثابت، روی اهداف تاریخی یکسان مقایسه شده‌اند؛ این آزمون بازاجرای کامل برنامه در هر تاریخ گذشته نیست. Legacy Global در این مقایسه روی همان مبدأهای انتخاب مشترک ارزیابی شده و لزوماً همان خروجی نسخه عملیاتی قبلی نیست. '+
+    '<p>'+(nested?'در هر مبدأ، موتور عملیاتی Global و Hierarchical فقط با تاریخچه همان زمان دوباره مدل و Recipe را انتخاب می‌کند؛ مبنا آخرین فروش مشاهده‌شده است. حداکثر شش بلوک سه‌دوره‌ای غیرهم‌پوشان بررسی می‌شوند. تفاوت Global و Hierarchical شامل تمام تفاوت‌های سیاست اجرایی است، نه فقط Category Override. آزمون با Master فعلی بازسازی شده، نه نسخه‌های تاریخی منتشرشده؛ سری بدون سابقه مثبت صفر پیش‌بینی می‌شود و فروش آینده آن در خطا منظور می‌شود. ':'سه سیاست انتخاب Recipe ثابت، روی اهداف تاریخی یکسان مقایسه شده‌اند؛ این آزمون بازاجرای کامل برنامه در هر تاریخ گذشته نیست. Legacy Global در این مقایسه روی همان مبدأهای انتخاب مشترک ارزیابی شده و لزوماً همان خروجی نسخه عملیاتی قبلی نیست. ')+
     'WAPE از مجموع قدرمطلق خطای سری‌های واقعی محاسبه می‌شود، نه از اختلاف مجموع کل فروش. '+
-    'نتیجه این آزمون فقط شواهد عملکرد تاریخی است؛ به‌طور خودکار Recipe آینده را بر اساس Holdout تغییر نمی‌دهد. قاعده محافظ جهش ارزش واحد برای مبلغ فروش جدا از این سه Recipe است.</p></div>'+guardNote+
-    '<section class="evidence"><h3>خلاصه مقایسه روی Holdout مستقل</h3>'+
+    'نتیجه این آزمون فقط شواهد عملکرد تاریخی است؛ به‌طور خودکار Recipe آینده را بر اساس Holdout تغییر نمی‌دهد. '+(nested?'Price Guard در بازاجرای واقعی Value لحاظ شده است. جزئیات هر مبدأ و اهداف آن در CSV جداگانه گزارش می‌شود.':'قاعده محافظ جهش ارزش واحد برای مبلغ فروش جدا از این سه Recipe است.')+'</p></div>'+guardNote+
+    '<section class="evidence"><h3>'+(nested?'خلاصه تجمیعی روی اهداف خارج از نمونه':'خلاصه مقایسه روی Holdout مستقل')+'</h3>'+
     '<div class="lab-table-wrap"><table class="lab-table"><thead><tr>'+
-    '<th>شاخص</th><th>افق</th><th>Legacy Global</th><th>Guarded Global</th>'+
-    '<th>Hierarchical</th><th>تغییر نسبت به Legacy</th><th>مبدأ آزمون</th>'+
+    '<th>شاخص</th><th>افق</th><th>'+(nested?'Last Observation':'Legacy Global')+'</th><th>'+(nested?'Global':'Guarded Global')+'</th>'+
+    '<th>Hierarchical</th><th>تغییر نسبت به '+(nested?'مبنا':'Legacy')+'</th><th>مبدأ آزمون</th>'+
     '</tr></thead><tbody>'+tableRows+'</tbody></table></div>'+
     '<p class="lab-note">مقدار مثبت «کاهش خطای مطلق» نشان‌دهنده بهبود است؛ مقدار منفی یعنی افت عملکرد. '+
     'اگر فروش واقعی صفر باشد WAPE به‌جای صفر ساختگی با N/A مشخص می‌شود.</p></section>'+
