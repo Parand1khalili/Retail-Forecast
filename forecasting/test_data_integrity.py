@@ -131,8 +131,40 @@ class IntegrityTests(unittest.TestCase):
 
     def test_duplicate_raw_rows_even_after_projection(self):
         data=sales();data.append(data[1].copy())
-        with self.assertRaisesRegex(ValueError,'تکراری'):
+        with self.assertRaisesRegex(ValueError,'2 و 4 کاملاً تکراری'):
             self.load({'sales':data},{'dimension_columns':['City','Brand','Element Caption']})
+
+    def test_distinct_rows_with_same_identity_are_aggregated_and_audited(self):
+        rows=sales()
+        rows+=sales(volumes=(5,7),values=(50,70))[1:]
+        d=self.load({'sales':rows})
+        np.testing.assert_array_equal(d.volume,[[15,27]])
+        np.testing.assert_array_equal(d.value,[[150,270]])
+        audit=d.schema['integrity']['sheets'][0]
+        self.assertEqual(audit['source_sales_rows'],4)
+        self.assertEqual(audit['aggregated_distinct_rows'],2)
+        self.assertEqual(audit['multirow_measure_identities'],2)
+        self.assertEqual(audit['aggregation_examples'][0]['row'],'4')
+        self.assertEqual(d.schema['integrity']['reconciliation'][0]['source_volume'],[15,27])
+        self.assertEqual(d.schema['integrity']['reconciliation'][0]['max_absolute_difference'],[0,0])
+
+    def test_equal_forecast_values_with_distinct_other_source_cells_preserved(self):
+        rows=sales()
+        rows[0].append('Year-2025')
+        rows[1].append(100)
+        rows[2].append(1000)
+        rows.append(rows[1][:-1]+[200])
+        rows.append(rows[2][:-1]+[2000])
+        d=self.load({'sales':rows})
+        np.testing.assert_array_equal(d.volume,[[20,40]])
+        np.testing.assert_array_equal(d.value,[[200,400]])
+        self.assertEqual(d.schema['integrity']['sheets'][0]['aggregated_distinct_rows'],2)
+
+    def test_distinct_rows_with_invalid_value_are_not_ignored(self):
+        rows=sales()
+        rows+=sales(volumes=(5,'bad'),values=(50,70))[1:]
+        with self.assertRaisesRegex(ValueError,'نامعتبر'):
+            self.load({'sales':rows})
 
     def test_deliberate_dimension_projection_reconciles(self):
         data=sales();data+=sales(size='Large',volumes=(2,3),values=(20,30))[1:]

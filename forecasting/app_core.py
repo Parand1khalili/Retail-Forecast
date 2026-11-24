@@ -29,7 +29,7 @@ def colnum(ref):
         n=n*26+ord(c.upper())-64
     return n-1
 
-def read_sheet(z, shared, xml):
+def read_sheet(z, shared, xml, with_row_number=False):
     """Yield dictionaries per row without loading a full 100+ MB workbook."""
     with z.open(xml) as f:
         for _,el in ET.iterparse(f,events=('end',)):
@@ -44,8 +44,9 @@ def read_sheet(z, shared, xml):
                     idx=colnum(c.attrib['r'])
                     if idx in vals:raise ValueError('سلول تکراری در یک ردیف Excel وجود دارد.')
                     vals[idx]=value
+            row_number=el.attrib.get('r','?')
             el.clear()
-            yield vals
+            yield (row_number,vals) if with_row_number else vals
 
 def parse_master(path,mapping=None):
     """Fail closed on ambiguous sales observations; audit every accepted period."""
@@ -79,10 +80,10 @@ def parse_master(path,mapping=None):
             name=sh.attrib['name']
             t=targets[sh.attrib[R+'id']].replace('\\','/')
             xml=t.lstrip('/') if t.startswith('/') else 'xl/'+t
-            rows=read_sheet(z,shared,xml)
+            rows=read_sheet(z,shared,xml,with_row_number=True)
             head=None;possible=False;wrong_frequency=False
             for _ in range(10):
-                try:candidate=next(rows)
+                try:_,candidate=next(rows)
                 except StopIteration:break
                 maybe=months_in_header(candidate,periodicity)
                 alternative=months_in_header(candidate,opposite)
@@ -93,7 +94,7 @@ def parse_master(path,mapping=None):
             if head is None:
                 # Scan the remaining rows for a delayed/unsupported sales table.
                 # Non-sales worksheets are recorded, never silently discarded.
-                for candidate in rows:
+                for _,candidate in rows:
                     if (months_in_header(candidate,periodicity) or months_in_header(candidate,opposite)
                             or any(metric_kind(v) for v in candidate.values())):
                         possible=True;break
@@ -128,8 +129,9 @@ def parse_master(path,mapping=None):
             grain_col=next((i for i in before if normalized(head[i])=='elementcaption'),None)
             if grain_col is not None and grain_col not in categories:
                 raise prompt('Element Caption برای کنترل سطح تجمیع نباید حذف شود.')
-            # Raw identities use ALL pre-measure fields, even if the user opts
-            # to aggregate away some dimensions. Duplicate detection precedes projection.
+            # Series identity is not full-row identity. Distinct source rows may
+            # legitimately contribute to one series; exact duplicate rows are rejected.
+            # All pre-measure dimensions are retained for pairing before projection.
             field_by_col={i:f for f,i in fields.items()}
             raw_cols=sorted(before,key=lambda i:normalized(field_by_col.get(i,head[i])))
             raw_ids=tuple(normalized(field_by_col.get(i,head[i])) for i in raw_cols)
@@ -153,10 +155,12 @@ def parse_master(path,mapping=None):
             ordered=sorted(months,key=lambda i:months[i])
             dates=[months[i] for i in ordered]
             bykey={};projected={};seen=set();seen_measures=set();labels={};excluded=defaultdict(int)
+            row_fingerprints={};identity_counts=defaultdict(int);source_sales_rows=0
+            collision_examples=[]
             raw_totals=defaultdict(lambda:np.zeros((2,len(ordered))))
             valid=np.zeros(len(ordered),dtype=int);missing=np.zeros(len(ordered),dtype=int)
             scope_by_key={}
-            for vals in rows:
+            for row_number,vals in rows:
                 metric=vals.get(boundary)
                 if metric is not None:seen_measures.add(str(metric))
                 auto_kind=metric_kind(metric)
@@ -197,9 +201,19 @@ def parse_master(path,mapping=None):
                     if f in fields and not str(vals.get(fields[f],'')).strip():
                         raise ValueError(f'شیت {name}: مقدار بعد اجباری {f} در ردیف فروش خالی است.')
                 raw_key=tuple(str(vals.get(i,'')).strip() for i in raw_cols)
-                if (raw_key,mi) in seen:
-                    raise ValueError(f'شیت {name}: ردیف فروش تکراری با هویت کامل یکسان وجود دارد؛ جمع خودکار مجاز نیست.')
-                seen.add((raw_key,mi))
+                # Compare all populated source cells, not just categorical keys.
+                # Include non-period columns because distinct records can share
+                # all forecast periods. No raw sales values enter the audit examples.
+                fingerprint=hashlib.sha256(json.dumps(sorted((i,v) for i,v in vals.items() if str(v).strip()),ensure_ascii=False,separators=(',',':')).encode('utf-8')).digest()
+                if fingerprint in row_fingerprints:
+                    raise ValueError(f'شیت {name}: ردیف‌های Excel {row_fingerprints[fingerprint]} و {row_number} کاملاً تکراری هستند؛ جمع خودکار مجاز نیست.')
+                row_fingerprints[fingerprint]=row_number
+                identity=(raw_key,mi)
+                identity_counts[identity]+=1
+                source_sales_rows+=1
+                if identity in seen and len(collision_examples)<20:
+                    collision_examples.append({'row':row_number,'measure':str(metric),'occurrence':identity_counts[identity]})
+                seen.add(identity)
                 out_key=tuple(str(vals.get(i,'')).strip() if i is not None else 'Not specified' for i in projection)
                 projected[raw_key]=out_key
                 market=str(vals.get(fields['Market'],'')).strip() if 'Market' in fields else ''
@@ -207,18 +221,19 @@ def parse_master(path,mapping=None):
                 scope=(market,caption if caption.casefold() in grain_labels else '')
                 scope_by_key[raw_key]=scope
                 if raw_key not in bykey:bykey[raw_key]=np.zeros((2,len(ordered)))
-                a=bykey[raw_key][mi]
+                row_values=np.zeros(len(ordered),dtype=float)
                 for j,col in enumerate(ordered):
                     raw=vals.get(col)
                     try:
                         num=float(raw)
                         if not np.isfinite(num) or num<0:raise ValueError()
-                        a[j]=num;valid[j]+=1
+                        row_values[j]=num;valid[j]+=1
                     except (TypeError,ValueError):
                         if raw is not None and str(raw).strip() not in ('','-','–','—'):
                             raise ValueError(f'شیت {name}: مقدار فروش نامعتبر در دوره {months[col]}.')
                         missing[j]+=1
-                raw_totals[scope][mi]+=a
+                bykey[raw_key][mi]+=row_values
+                raw_totals[scope][mi]+=row_values
             for kind,requested in manual_measures.items():
                 if str(requested).strip() and normalized(labels.get(kind))!=normalized(requested):
                     raise prompt('نام صریح شاخص انتخاب‌شده در جدول فروش یافت نشد.',sorted(seen_measures))
@@ -251,7 +266,10 @@ def parse_master(path,mapping=None):
                                'values':np.stack([bykey[k][:,keep] for k in keys]),
                                'projected':[projected[k] for k in keys],'source_totals':source_groups[scope],
                                'unavailable_periods':unavailable})
-            sheet_audits.append({'sheet':name,'source_series':len(bykey),'source_sales_rows':len(seen),
+            sheet_audits.append({'sheet':name,'source_series':len(bykey),'source_sales_rows':source_sales_rows,
+                                 'aggregated_distinct_rows':source_sales_rows-len(seen),
+                                 'multirow_measure_identities':sum(c>1 for c in identity_counts.values()),
+                                 'aggregation_examples':collision_examples,
                                  'excluded_measures':dict(excluded),'ignored_columns':ignored,
                                  'unavailable_periods':unavailable,'accepted_periods':kept_dates,
                                  'excluded_dimensions':[str(head[i]) for i in before if i not in categories and i!=fields.get('Market')],
@@ -455,7 +473,7 @@ class Dataset:
         with path.open('rb') as f:
             for chunk in iter(lambda:f.read(4*1024*1024),b''):digest.update(chunk)
         signature=hashlib.sha256(json.dumps(mapping or {},sort_keys=True,ensure_ascii=False).encode('utf-8')).hexdigest()[:12]
-        out=CACHE/('v7_'+digest.hexdigest()+'_'+signature+'.npz')
+        out=CACHE/('v8_'+digest.hexdigest()+'_'+signature+'.npz')
         if out.exists():
             with np.load(out) as z:
                 schema=json.loads(str(z['schema_json'])) if 'schema_json' in z.files else None

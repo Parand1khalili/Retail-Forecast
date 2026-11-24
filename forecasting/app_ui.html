@@ -507,6 +507,7 @@ function renderSchemaPreview(schema){
     const summary=document.createElement('summary');summary.textContent='جزئیات کنترل داده و موارد خارج از محاسبه';details.append(summary);
     for(const sh of audit.sheets){
       const p=document.createElement('p');p.textContent=sh.sheet+' · '+sh.source_sales_rows+' ردیف فروش'+
+        (sh.aggregated_distinct_rows?' · '+sh.aggregated_distinct_rows+' ردیف متمایز در هویت مشترک تجمیع شد (مجموع فروش حفظ شده)':'')+
         (sh.unavailable_periods.length?' · دوره‌های بدون داده: '+sh.unavailable_periods.join('، '):'')+
         (Object.keys(sh.excluded_measures).length?' · شاخص‌های خارج از محاسبه: '+Object.entries(sh.excluded_measures).map(([k,v])=>k+' ('+v+')').join('، '):'')+
         (sh.ignored_columns.length?' · ستون‌های غیر دوره‌ای: '+sh.ignored_columns.join('، '):'')+
