@@ -63,6 +63,15 @@ def _levels(dataset, origin, include_series=True):
         sku_field = next((field for field in ('SKU', 'Element Description')
                           if field in dimensions), None)
         if sku_field is not None:
+            # A description at Product/Brand grain is not evidence of an SKU.
+            # Only an explicit SKU field or confirmed SKU caption warrants
+            # that label. Otherwise retain a description-level audit.
+            grain_field = next((field for field in ('Element Caption', 'ElementCaption')
+                                if field in dimensions), None)
+            sku_grain = grain_field is not None and all(
+                str(value).strip().casefold() in ('sku', 'skus')
+                for value in meta[:, dimensions.index(grain_field)])
+            level = 'SKU' if sku_field == 'SKU' or sku_grain else 'Element Description'
             fields = [field for field in ('Company', 'Brand', sku_field)
                       if field in dimensions]
             cols = [dimensions.index(field) for field in fields]
@@ -72,7 +81,7 @@ def _levels(dataset, origin, include_series=True):
                 if identity and identity[-1].casefold() not in PLACEHOLDER:
                     groups[' / '.join(identity)].append(i)
             if groups:
-                yield 'SKU', {k: np.asarray(v, dtype=int) for k, v in groups.items()}
+                yield level, {k: np.asarray(v, dtype=int) for k, v in groups.items()}
         # Each Series remains the original observed product/location cell.
         yield 'Series', {str(i): np.array([i]) for i in range(n)}
     recent = dataset.metric('volume_kg')[:, max(0, origin - 11):origin + 1]
