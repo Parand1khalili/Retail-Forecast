@@ -78,9 +78,18 @@ def _compare(dataset, origins, horizon, rows, actual, grid, catalog, incumbent,
     recipes = dict(catalog)
     # Keep the exact incumbent composition if a name was already in catalog.
     recipes[reference] = parts
-    values = {name: _evaluate(pieces, grid, origins, horizon, rows)
-              for name, pieces in recipes.items()}
-    losses = {name: np.abs(pred - actual).sum(axis=0) for name, pred in values.items()}
+    # Avoid retaining an N-series × N-events matrix for every candidate.
+    # Large RA workbooks can have hundreds of thousands of cells.
+    losses = {}
+    score_rows = []
+    for name, pieces in recipes.items():
+        pred = _evaluate(pieces, grid, origins, horizon, rows)
+        losses[name] = np.abs(pred - actual).sum(axis=0)
+        if not category:
+            score = _stats(actual, pred)
+            score_rows.append({'name': name, 'components': pieces,
+                               'wape': score['wape'], 'bias': score['bias'],
+                               'absolute_error': float(losses[name].sum())})
     if category:
         guard = CategoryGuard()
         ref = losses[reference]
@@ -93,17 +102,13 @@ def _compare(dataset, origins, horizon, rows, actual, grid, catalog, incumbent,
                     'reason': 'stable category improvement' if eligible else 'category fallback'}
     else:
         winner, decision = choose_champion(losses, reference, ChampionGuard())
-    predicted = values[winner]
-    score_rows = [{'name': name, 'components': recipes[name],
-                   'wape': _stats(actual, pred)['wape'],
-                   'bias': _stats(actual, pred)['bias'],
-                   'absolute_error': float(losses[name].sum())}
-                  for name, pred in values.items()]
+    predicted = _evaluate(recipes[winner], grid, origins, horizon, rows)
+    reference_prediction = _evaluate(parts, grid, origins, horizon, rows)
     score_rows.sort(key=lambda row: (row['absolute_error'], row['name']))
     evidence = {'origins': len(origins), 'reference': reference,
                 'selected': winner, 'decision': decision,
                 'group': _stats(actual, predicted),
-                'inherited': _stats(actual, values[reference]),
+                'inherited': _stats(actual, reference_prediction),
                 'relative_improvement': (
                     float(1 - losses[winner].sum()/losses[reference].sum())
                     if losses[reference].sum() > 0 else None),
@@ -159,7 +164,7 @@ def conditional_policy(dataset, cutoff, normal, origins, grid, live_names):
     audit['reason'] = 'matched_event_competition'
     hierarchy = result['_hierarchy']
     columns = hierarchy['dimensions']
-    groups = _groups(dataset, columns) if columns else {}
+    groups = (_groups(dataset, columns) if columns and normal.get('_strategy')!='global' else {})
     normal_hierarchy = normal['_hierarchy']
     all_rows = np.arange(len(dataset.meta))
     for h in HORIZONS:
@@ -211,5 +216,6 @@ def conditional_policy(dataset, cutoff, normal, origins, grid, live_names):
                             'selection_scope': 'matched_shock_events'}
                 overrides.append(node)
         hierarchy['overrides'][key] = overrides
+    hierarchy['groups_considered'] = len(groups)*len(HORIZONS)
     hierarchy['groups_selected'] = sum(len(v) for v in hierarchy['overrides'].values())
     return result
