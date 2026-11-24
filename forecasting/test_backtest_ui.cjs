@@ -86,6 +86,16 @@ const noHoldout = {...fake, summaries:[
 const result = runWithData(noHoldout);
 assert.match(result.nodes.results.innerHTML,/Holdout کافی نیست/);
 assert.match(result.nodes.labGroupTable.innerHTML,/دادهٔ Holdout موجود نیست/);
+// The locked Recipe comparison is not a replay of the live price override.
+const guardAudit=runWithData({...fake,metrics:['value_1000_toman'],summaries:[{
+  metric:'value_1000_toman',horizon:'1',audit_type:'untouched_holdout',
+  origin:'2026-05',legacy_global_wape:.5,global_wape:.5,hierarchical_wape:.5,
+  relative_reduction_vs_legacy:0,price_guard_active_at_holdout:true,price_guard_wape:0
+}],group_totals:[],group_preview:[]});
+assert.match(guardAudit.nodes.results.innerHTML,/قاعده مستقل جهش ارزش واحد در مبدأ آزمون فعال بود/);
+assert.match(guardAudit.nodes.results.innerHTML,/H1: 0.0%/);
+assert.match(guardAudit.nodes.results.innerHTML,/بازاجرای کامل برنامه/);
+assert.doesNotMatch(nodes.results.innerHTML,/قاعده مستقل جهش ارزش واحد در مبدأ آزمون فعال بود/);
 // Check actual preflight renderer against ready, missing deps, stale backend and
 // unavailable /api/health; never prescribe pip for a stale server.
 const runtimeStart = html.indexOf('function showRuntimeStatus(health,requestError=');
