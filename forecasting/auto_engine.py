@@ -17,6 +17,7 @@ from selection_core import (rolling_plan, candidate_info, candidate_registry, ch
 from category_selection import (category_dimensions, select_category_overrides,
                                 forecast_with_recipes, series_recipes, holdout_comparison,
                                 filtered_holdout_summary)
+from price_regime import GUARD_ID, MIN_EVENTS, shock_origins, conditional_policy
 
 OUT=ROOT/'outputs/automatic_models'
 OUT.mkdir(parents=True,exist_ok=True)
@@ -26,6 +27,7 @@ PARAMS=dict(iterations=180,depth=5,learning_rate=.06,l2_leaf_reg=10,
 VERSION='global-v4-calendar-aware-cache'
 SELECTION_VERSION='robust-price-volume-v3'
 POLICY_VERSION='robust-champion-v7-scale-invariant-stable-category'
+PRICE_POLICY_VERSION='matched-shock-v1'
 
 def emit(*args):print(*args,flush=True)
 
@@ -334,6 +336,11 @@ def forecast_component(d,metric,cutoff,name):
         raise ValueError('Forecast candidate is incompatible with the metric or periodicity.')
     if cutoff+1 < spec.min_history:
         raise ValueError('Insufficient history for selected candidate.')
+    if name == GUARD_ID:
+        pred, signal = guarded_money(d, cutoff)
+        if pred is None:
+            raise ValueError('Price specialist is unavailable outside an observed shock.')
+        return pred
     parts=name.split('|')
     if parts[0] in ['base','light','price-trend']:return base_candidates(d,metric,cutoff)[name]
     window=int(parts[2]) if parts[2]!='all' else 'all'
@@ -398,7 +405,52 @@ def dataset_policy(d,metric,cutoff,strategy='hierarchical'):
     return policy
 
 
-def automatic_forecast(d,metric,horizon,cutoff=None,strategy='hierarchical'):
+def effective_policy(d, metric, cutoff, strategy='hierarchical'):
+    """The policy used by live forecasts; historical replay calls this unchanged."""
+    normal = dataset_policy(d, metric, cutoff, strategy)
+    if metric != 'value_1000_toman':
+        return normal
+    signal = price_shift_guard(d, cutoff)
+    if not signal['active']:
+        return normal
+    fingerprint = hashlib.sha256(PRICE_POLICY_VERSION.encode()+POLICY_VERSION.encode()+
+        VERSION.encode()+strategy.encode()+data_identity(d,0,cutoff)).hexdigest()[:24]
+    folder = OUT/'price_regime_policies'
+    folder.mkdir(parents=True,exist_ok=True)
+    cached = folder/f'{fingerprint}.json'
+    if cached.exists():
+        return json.loads(cached.read_text(encoding='utf-8'))
+    origins = shock_origins(cutoff, lambda o: price_shift_guard(d,o))
+    grid = {}
+    live_names = set()
+    if len(origins) >= MIN_EVENTS:
+        for origin in origins:
+            models = dict(candidates(d,metric,origin))
+            special,_ = guarded_money(d,origin)
+            if special is not None:
+                models[GUARD_ID] = special
+            grid[origin] = models
+        live = candidates(d,metric,cutoff)
+        live_names = {name for name, pred in live.items()
+                      if np.asarray(pred).shape == (len(d.meta),3)
+                      and np.isfinite(pred).all() and (pred>=0).all()}
+        special,_ = guarded_money(d,cutoff)
+        if (special is not None and special.shape == (len(d.meta),3)
+                and np.isfinite(special).all() and (special>=0).all()):
+            live_names.add(GUARD_ID)
+    policy = conditional_policy(d,cutoff,normal,origins,grid,live_names)
+    policy['_price_regime']['signal'] = signal
+    # Ordinary locked-recipe holdout is not the accuracy of this adaptive
+    # policy. The Model Lab replays the actual policy at the historical cutoff.
+    policy['_holdout'] = None
+    tmp = cached.with_suffix('.tmp')
+    tmp.write_text(json.dumps(policy,ensure_ascii=False,indent=2),encoding='utf-8')
+    tmp.replace(cached)
+    return policy
+
+
+def automatic_forecast(d,metric,horizon,cutoff=None,strategy='hierarchical',
+                       price_adaptation=True):
     if 'Market' in d.all_dimensions() and len(set(d.meta[:,d.all_dimensions().index('Market')]))>1:
         raise ValueError('ابتدا یک سطح Market را انتخاب کنید؛ سطح‌های مکانی هم‌پوشان هستند.')
     if len(d.report_grain_levels()) > 1:
@@ -406,24 +458,25 @@ def automatic_forecast(d,metric,horizon,cutoff=None,strategy='hierarchical'):
     cutoff=len(d.months)-1 if cutoff is None else cutoff
     if strategy not in ('hierarchical','global'):
         raise ValueError('روش انتخاب مدل نامعتبر است.')
-    if metric=='value_1000_toman':
-        guarded,guard=guarded_money(d,cutoff)
-        if guarded is not None:
-            return guarded[:,horizon-1],{'name':'robust price-shift forecast',
-                    'basis':'جهش غیرمعمول ارزش واحد؛ استفاده از قاعده محافظ فروش ریالی',
-                    'validation_wape':None,'price_guard':guard,
-                    'category_selection':{'strategy':strategy,'active':False,
-                                          'reason':'Price-shift safety override'}}
+    if horizon not in (1,2,3) or not 1 <= cutoff < len(d.months):
+        raise ValueError('افق یا تاریخ پایان داده نامعتبر است.')
     if cutoff+1<18:
         method='Mean 2' if metric=='volume_kg' and horizon==1 else (
             'Damped trend' if metric!='volume_kg' and cutoff+1>=6 else 'Last month')
         history=d.metric(metric)[:,:cutoff+1]
-        return baseline(history,method,horizon),{'name':method,
+        recipe={'name':method,
                 'basis':'تاریخچه برای آموزش مدل کامل کوتاه است؛ برآورد پایه',
                 'validation_wape':None,
                 'category_selection':{'strategy':strategy,'active':False,
                                       'reason':'Insufficient history'}}
-    policy=dataset_policy(d,metric,cutoff,strategy)
+        if metric=='value_1000_toman' and price_adaptation:
+            signal=price_shift_guard(d,cutoff)
+            if signal['active']:
+                recipe['price_regime']={'active':True,'reason':'insufficient_history',
+                                        'origins':[],'minimum_events':MIN_EVENTS,'signal':signal}
+        return baseline(history,method,horizon,12//d.period_months),recipe
+    policy=(effective_policy(d,metric,cutoff,strategy) if price_adaptation
+            else dataset_policy(d,metric,cutoff,strategy))
     selected=policy[str(horizon)]
     hierarchy=policy['_hierarchy']
     recipes=series_recipes(d,selected,hierarchy,horizon) if strategy=='hierarchical' else [selected]*len(d.meta)
@@ -433,6 +486,11 @@ def automatic_forecast(d,metric,horizon,cutoff=None,strategy='hierarchical'):
     predictions={name:forecast_component(d,metric,cutoff,name) for name in necessary}
     output,usage,_=forecast_with_recipes(d,horizon,predictions,selected,hierarchy,strategy)
     recipe=dict(selected)
+    if policy.get('_price_regime'):
+        regime=policy['_price_regime']
+        recipe['price_regime']={k:v for k,v in regime.items() if k!='horizons'}
+        recipe['price_regime']['horizon_evidence']=regime['horizons'].get(str(horizon))
+        recipe['price_regime']['specialist_series']=usage.get(GUARD_ID,0)
     recipe['category_selection']={
         'strategy':strategy,'active':bool(hierarchy.get('overrides',{}).get(str(horizon))) and strategy=='hierarchical',
         'dimensions':hierarchy.get('dimensions',[]),
@@ -456,7 +514,7 @@ def _selected_category_explanation(d,metric,horizon,mask,strategy,recipe):
         return summary
     if strategy=='global':
         return summary
-    policy=dataset_policy(d,metric,len(d.months)-1,strategy)
+    policy=effective_policy(d,metric,len(d.months)-1,strategy)
     rows=series_recipes(d,policy[str(horizon)],policy['_hierarchy'],horizon)
     selected={}
     for i in np.flatnonzero(mask):
