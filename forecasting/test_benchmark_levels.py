@@ -83,6 +83,25 @@ class BenchmarkTests(unittest.TestCase):
                              np.array([10.,20.,30.]),26,include_series=False)
         self.assertFalse(any(item['level'] in ('SKU','Series') for item in brief))
 
+    def test_description_is_sku_only_when_report_grain_confirms_it(self):
+        class DescriptionDataset:
+            def __init__(self,caption):
+                self.meta=np.asarray([['All','Company','Brand',caption,'Item X']],
+                                     dtype=object)
+                self.volume=np.ones((1,36))
+            def all_dimensions(self):
+                return ['Market','Company','Brand','Element Caption','Element Description']
+            def metric(self,name):
+                return self.volume
+        for caption,expected in (('Product','Element Description'),('SKU','SKU'),
+                                 ('Ordinary brand name','Element Description')):
+            d=DescriptionDataset(caption)
+            rows=compare_levels(d,np.ones(1),np.ones(1),np.ones(1),26)
+            levels={row['level'] for row in rows}
+            self.assertIn(expected,levels)
+            if expected!='SKU':
+                self.assertNotIn('SKU',levels)
+
     def test_error_validation_and_breakdown(self):
         with self.assertRaises(ValueError):
             error_metrics([1.],[1.,2.])
