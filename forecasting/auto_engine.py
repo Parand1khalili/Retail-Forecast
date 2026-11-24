@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from app_core import Dataset,baseline,DIMS,ROOT
 # Use packages from the active Python interpreter, not stale vendored wheels.
-from catboost import CatBoostRegressor
+from catboost import CatBoostRegressor, CatBoostError
 from backtest import FeatureBuilder
 from light_benchmark import candidates as light_candidates
 from selection_core import (rolling_plan, candidate_info, candidate_registry, choose_champion, ChampionGuard,
@@ -24,7 +24,7 @@ OUT.mkdir(parents=True,exist_ok=True)
 PARAMS=dict(iterations=180,depth=5,learning_rate=.06,l2_leaf_reg=10,
             loss_function='RMSE',random_seed=42,thread_count=4,verbose=False,
             allow_writing_files=False,has_time=True,one_hot_max_size=32)
-VERSION='global-v4-calendar-aware-cache'
+VERSION='global-v5-constant-target-bootstrap'
 SELECTION_VERSION='robust-price-volume-v3'
 POLICY_VERSION='robust-champion-v7-scale-invariant-stable-category'
 PRICE_POLICY_VERSION='matched-shock-v1'
@@ -135,7 +135,7 @@ def fit_models(d,metric,cutoff,window,predict_only=None):
     if not frames:return {}
     X=pd.concat(frames,ignore_index=True);y=np.concatenate(truths);ly=np.concatenate(latest);scale=np.concatenate(scales)
     ptarget=np.concatenate(pt);plast=np.concatenate(pl);pw=np.concatenate(priceweights)
-    outputs={};predframes=[b.features(last,h) for h in [1,2,3]]
+    outputs={};training_options={};predframes=[b.features(last,h) for h in [1,2,3]]
     for mode in ['raw','scaled','log','price']:
         if mode=='price' and metric!='volume_kg':continue
         begun=time.monotonic();valid=np.ones(len(y),dtype=bool);weights=None
@@ -147,9 +147,25 @@ def fit_models(d,metric,cutoff,window,predict_only=None):
             response=np.log(np.maximum(ptarget,1e-8)/np.maximum(plast,1e-8));weights=np.sqrt(np.maximum(pw,1))
         if not valid.any():continue
         options=dict(PARAMS)
-        if np.ptp(response[valid])==0:options['allow_const_label']=True
-        model=CatBoostRegressor(**options)
-        model.fit(X.loc[valid],response[valid],cat_features=d.all_dimensions(),sample_weight=weights[valid] if weights is not None else None)
+        if np.ptp(response[valid])==0:
+            # Constant responses (e.g. exactly stable volume) have zero
+            # sampling gradients; MVS cannot sample them reliably.
+            options.update(allow_const_label=True,bootstrap_type='No')
+        def train(config):
+            estimator=CatBoostRegressor(**config)
+            estimator.fit(X.loc[valid],response[valid],cat_features=d.all_dimensions(),
+                          sample_weight=weights[valid] if weights is not None else None)
+            return estimator
+        try:
+            model=train(options)
+        except CatBoostError as exc:
+            # Narrow recovery for CatBoost's documented sampling failure;
+            # do not suppress unrelated fit errors or fabricate predictions.
+            if 'Too few sampling units' not in str(exc) or options.get('bootstrap_type')=='No':
+                raise
+            options['bootstrap_type']='No'
+            model=train(options)
+        training_options[mode]=options
         model.save_model(str(folder/(mode+'.cbm')))
         arr=[]
         for h,(xp,ps,ever) in enumerate(predframes,1):
@@ -165,7 +181,7 @@ def fit_models(d,metric,cutoff,window,predict_only=None):
         emit('FIT',metric,d.months[cutoff],'history',window,mode,'rows',len(X),'sec',round(time.monotonic()-begun,1))
     np.savez_compressed(cached,**outputs)
     (folder/'audit.json').write_text(json.dumps({'metric':metric,'input_start':d.months[start],'input_end':d.months[cutoff],
-        'max_training_target':d.months[cutoff],'rows':len(X),'parameters':PARAMS},indent=2),encoding='utf-8')
+        'max_training_target':d.months[cutoff],'rows':len(X),'parameters':PARAMS,'effective_parameters':training_options},indent=2),encoding='utf-8')
     return outputs
 
 def base_candidates(d,metric,cutoff):
