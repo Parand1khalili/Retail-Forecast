@@ -921,6 +921,12 @@ function renderBacktest(result){
   const metrics=result.metrics||[],rows=result.summaries||[];
   const completed=rows.filter(item=>item.audit_type==='untouched_holdout');
   const total=completed.length;
+  const guardRows=completed.filter(item=>item.metric==='value_1000_toman'&&item.price_guard_active_at_holdout===true);
+  const guardNote=guardRows.length?
+    '<div class="model-lab-intro"><strong>قاعده مستقل جهش ارزش واحد در مبدأ آزمون فعال بود</strong>'+
+    '<p>در اجرای واقعی در این مبدأ، قاعده محافظ می‌توانست جایگزین Recipe انتخابی شود. WAPE این قاعده به‌صورت جداگانه: '+
+    guardRows.map(item=>'H'+escapeHtml(item.horizon)+': '+labPercent(item.price_guard_wape)).join(' · ')+
+    '. این اعداد در انتخاب Recipe استفاده نشده‌اند.</p></div>':'';
   const tableRows=rows.map(item=>{
     const available=item.audit_type==='untouched_holdout';
     return '<tr><td>'+escapeHtml(labMetricName(item.metric))+'</td>'+
@@ -962,9 +968,9 @@ function renderBacktest(result){
     '<span>'+persian(result.periods)+' دوره تاریخی</span>'+
     '<span>'+persian(metrics.length)+' شاخص</span><span>افق‌های H1 / H2 / H3</span></div>'+
     '<div class="model-lab-intro"><strong>این جدول چه چیزی را مقایسه می‌کند؟</strong>'+
-    '<p>سه سیاست، روی اهداف تاریخی یکسان و بدون استفاده از Holdout برای انتخاب Recipe مقایسه شده‌اند. '+
+    '<p>سه سیاست انتخاب Recipe ثابت، روی اهداف تاریخی یکسان مقایسه شده‌اند؛ این آزمون بازاجرای کامل برنامه در هر تاریخ گذشته نیست. Legacy Global در این مقایسه روی همان مبدأهای انتخاب مشترک ارزیابی شده و لزوماً همان خروجی نسخه عملیاتی قبلی نیست. '+
     'WAPE از مجموع قدرمطلق خطای سری‌های واقعی محاسبه می‌شود، نه از اختلاف مجموع کل فروش. '+
-    'نتیجه این آزمون فقط شواهد عملکرد تاریخی است؛ به‌طور خودکار Recipe آینده را بر اساس Holdout تغییر نمی‌دهد.</p></div>'+
+    'نتیجه این آزمون فقط شواهد عملکرد تاریخی است؛ به‌طور خودکار Recipe آینده را بر اساس Holdout تغییر نمی‌دهد. قاعده محافظ جهش ارزش واحد برای مبلغ فروش جدا از این سه Recipe است.</p></div>'+guardNote+
     '<section class="evidence"><h3>خلاصه مقایسه روی Holdout مستقل</h3>'+
     '<div class="lab-table-wrap"><table class="lab-table"><thead><tr>'+
     '<th>شاخص</th><th>افق</th><th>Legacy Global</th><th>Guarded Global</th>'+
