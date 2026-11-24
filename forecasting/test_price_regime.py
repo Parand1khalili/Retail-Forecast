@@ -148,6 +148,25 @@ class ProductionRegimeTests(unittest.TestCase):
                     self.assertAlmostEqual(interactive['prediction'],
                                            output['value_1000_toman'][:8,0].sum())
 
+    def test_actual_catboost_specialist_is_finite_and_cutoff_safe(self):
+        # Real CatBoost fit (small deterministic configuration for CI);
+        # constant quantity has zero residual, so the exact expected result
+        # at a persistent 50% price jump is 300 for all horizons.
+        d=panel(28)
+        d.value[:,23:]*=1.5
+        params={**engine.PARAMS,'iterations':4,'depth':2,'thread_count':1}
+        with TemporaryDirectory() as temp, \
+             patch.object(engine,'OUT',Path(temp)), \
+             patch.object(engine,'PARAMS',params):
+            pred=engine.forecast_component(d,'value_1000_toman',23,GUARD_ID)
+            np.testing.assert_allclose(pred,np.full((16,3),300.),rtol=1e-8)
+            self.assertTrue(list(Path(temp).rglob('raw.cbm')))
+            d.volume[:,24:]=9000.;d.value[:,24:]=900000.
+            again=engine.forecast_component(d,'value_1000_toman',23,GUARD_ID)
+            np.testing.assert_array_equal(pred,again)
+            with self.assertRaisesRegex(ValueError,'unavailable'):
+                engine.forecast_component(d,'value_1000_toman',22,GUARD_ID)
+
     def test_future_perturbation_cannot_change_historical_policy_or_forecast(self):
         d=panel()
         for origin in (17,24,32,41):
