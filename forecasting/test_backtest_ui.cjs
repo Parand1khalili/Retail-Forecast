@@ -90,11 +90,16 @@ assert.match(result.nodes.labGroupTable.innerHTML,/دادهٔ Holdout موجود
 const guardAudit=runWithData({...fake,metrics:['value_1000_toman'],summaries:[{
   metric:'value_1000_toman',horizon:'1',audit_type:'untouched_holdout',
   origin:'2026-05',legacy_global_wape:.5,global_wape:.5,hierarchical_wape:.5,
-  relative_reduction_vs_legacy:0,price_guard_active_at_holdout:true,price_guard_wape:0
+  relative_reduction_vs_legacy:0,price_guard_active_at_holdout:true,price_guard_wape:0,
+  live_audit_scope:'cutoff_safe_policy_replay',previous_live_wape:.8,live_global_wape:.6,
+  live_hierarchical_wape:.4,live_relative_reduction_vs_previous:.5,live_shock_events:2,live_specialist_series:8
 }],group_totals:[],group_preview:[]});
 assert.match(guardAudit.nodes.results.innerHTML,/قاعده مستقل جهش ارزش واحد در مبدأ آزمون فعال بود/);
 assert.match(guardAudit.nodes.results.innerHTML,/H1: 0.0%/);
 assert.match(guardAudit.nodes.results.innerHTML,/بازاجرای کامل برنامه/);
+assert.match(guardAudit.nodes.results.innerHTML,/بازاجرای سیاست واقعی فروش ریالی در مبدأ Holdout/);
+assert.match(guardAudit.nodes.results.innerHTML,/80.0%/);
+assert.match(guardAudit.nodes.results.innerHTML,/40.0%/);
 assert.doesNotMatch(nodes.results.innerHTML,/قاعده مستقل جهش ارزش واحد در مبدأ آزمون فعال بود/);
 // Check actual preflight renderer against ready, missing deps, stale backend and
 // unavailable /api/health; never prescribe pip for a stale server.
