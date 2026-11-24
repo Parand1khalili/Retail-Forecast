@@ -85,7 +85,9 @@ class FeatureBuilder:
         hist=self.y[:,:t+1];n=len(hist);latest=hist[:,-1]
         x=self.meta.copy();num={}
         for lag in [0,1,2,3,5,11,12]:
-            num['volume_latest' if lag==0 else f'volume_minus_{lag}']=self.y[:,t-lag] if t>=lag else np.zeros(n)
+            # An unavailable lag is not an observed zero sale. CatBoost
+            # supports numeric NaN; never backfill using future observations.
+            num['volume_latest' if lag==0 else f'volume_minus_{lag}']=self.y[:,t-lag] if t>=lag else np.full(n,np.nan)
         for w in [3,6,12]:
             z=hist[:,-w:];num[f'mean_{w}']=z.mean(1);num[f'std_{w}']=z.std(1);num[f'positive_count_{w}']=(z>0).sum(1)
         pos=hist>0;ever=pos.any(1)
@@ -155,7 +157,7 @@ def baseline_forecasts(y,origin):
 
 def ml_forecasts(builder,origin,save=False):
     n=len(builder.meta);out={name:np.zeros((n,3)) for name in ML};audit=[];importance=[]
-    signature=hashlib.sha256(b'parent-ratios-scale-v2'+json.dumps(PRESETS,sort_keys=True).encode()+builder.y[:,:origin+1].tobytes()+builder.meta.to_csv(index=False).encode()).hexdigest()[:12]
+    signature=hashlib.sha256(b'parent-ratios-scale-missing-lags-v3'+json.dumps(PRESETS,sort_keys=True).encode()+builder.y[:,:origin+1].tobytes()+builder.meta.to_csv(index=False).encode()).hexdigest()[:12]
     cache_dir=OUT/'fit_cache';cache_dir.mkdir(exist_ok=True)
     for h in [1,2,3]:
         xparts=[];scales=[];ys=[];latest=[]

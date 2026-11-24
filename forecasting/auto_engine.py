@@ -23,9 +23,9 @@ OUT.mkdir(parents=True,exist_ok=True)
 PARAMS=dict(iterations=180,depth=5,learning_rate=.06,l2_leaf_reg=10,
             loss_function='RMSE',random_seed=42,thread_count=4,verbose=False,
             allow_writing_files=False,has_time=True,one_hot_max_size=32)
-VERSION='global-v7-price-target'
+VERSION='global-v8-missing-lags'
 SELECTION_VERSION='robust-price-volume-v3'
-POLICY_VERSION='robust-champion-v10-price-cache'
+POLICY_VERSION='robust-champion-v11-missing-lags'
 
 def emit(*args):print(*args,flush=True)
 
