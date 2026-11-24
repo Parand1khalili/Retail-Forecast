@@ -194,11 +194,15 @@ def choose_champion(losses, reference, guard=ChampionGuard()):
             if name == reference:
                 continue
             gain = (baseline_loss - totals[name]) / baseline_loss
-            win_count = int(np.count_nonzero(values < anchor - 1e-9))
-            relative_worsening = np.divide(values - anchor, np.maximum(anchor, 1.0))
+            # Use dimensionless relative comparisons, not a 1-unit floor.
+            # The same physical data expressed in grams or kilograms must
+            # promote the same challenger. A perfect reference at an origin
+            # permits no positive error at that origin.
+            win_count = int(np.count_nonzero(values < anchor))
+            stable = np.all(values <= anchor * (1.0 + guard.max_relative_origin_worsening))
             if (gain >= guard.min_relative_improvement
                     and win_count >= required_wins
-                    and float(relative_worsening.max()) <= guard.max_relative_origin_worsening):
+                    and stable):
                 eligible.append(name)
     winner = min(eligible, key=lambda name: (totals[name], name)) if eligible else reference
     return winner, {
