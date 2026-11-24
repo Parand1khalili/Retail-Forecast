@@ -23,6 +23,8 @@ PREVIEW_FIELDS = (
     'global_wape', 'hierarchical_wape', 'legacy_global_wape',
     'relative_reduction_vs_legacy', 'improvement_vs_legacy',
     'global_mae', 'hierarchical_mae', 'global_bias', 'hierarchical_bias',
+    'live_legacy_global_wape', 'live_global_wape', 'live_hierarchical_wape',
+    'live_relative_reduction_vs_legacy', 'live_improvement_vs_legacy',
 )
 
 
