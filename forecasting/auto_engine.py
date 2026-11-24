@@ -14,7 +14,7 @@ from backtest import FeatureBuilder
 from light_benchmark import candidates as light_candidates
 from selection_core import (rolling_plan, candidate_info, candidate_registry, choose_champion, ChampionGuard,
                             eligible_candidates)
-from category_selection import (category_dimensions, select_category_overrides,
+from category_selection import (CategoryGuard, category_dimensions, select_category_overrides,
                                 forecast_with_recipes, series_recipes, holdout_comparison,
                                 filtered_holdout_summary)
 
@@ -23,9 +23,9 @@ OUT.mkdir(parents=True,exist_ok=True)
 PARAMS=dict(iterations=180,depth=5,learning_rate=.06,l2_leaf_reg=10,
             loss_function='RMSE',random_seed=42,thread_count=4,verbose=False,
             allow_writing_files=False,has_time=True,one_hot_max_size=32)
-VERSION='global-v6-scaled-log-residual'
+VERSION='global-v7-price-target'
 SELECTION_VERSION='robust-price-volume-v3'
-POLICY_VERSION='robust-champion-v9-scaled-log-residual'
+POLICY_VERSION='robust-champion-v10-price-cache'
 
 def emit(*args):print(*args,flush=True)
 
@@ -169,7 +169,11 @@ def fit_models(d,metric,cutoff,window,predict_only=None):
         elif mode=='log':response=log_residual_target(y,ly,log_scale);weights=np.sqrt(scale)
         else:
             valid=np.isfinite(ptarget)&np.isfinite(plast)&(ptarget>0)&(plast>0)&(pw>0)
-            response=np.log(np.maximum(ptarget,1e-8)/np.maximum(plast,1e-8));weights=np.sqrt(np.maximum(pw,1))
+            # Only strictly positive, observed unit values define a log ratio.
+            # Subtract logs to avoid overflow in the ratio; no native-unit floor.
+            response=np.zeros_like(ptarget);weights=np.zeros_like(pw)
+            response[valid]=np.log(ptarget[valid])-np.log(plast[valid])
+            weights[valid]=np.sqrt(pw[valid])
         if not valid.any():continue
         options=dict(PARAMS)
         if np.ptp(response[valid])==0:options['allow_const_label']=True
@@ -183,8 +187,14 @@ def fit_models(d,metric,cutoff,window,predict_only=None):
             elif mode=='scaled':pred=b.y[:,last]+delta*ps
             elif mode=='log':pred=log_residual_prediction(b.y[:,last],prediction_log_scale,delta)
             else:
+                # A learned change requires a positive observed origin price,
+                # as in training. Otherwise carry the last observed unit value
+                # unchanged (zero if none); do not extrapolate an unseen regime.
+                current=b.price[:,last]
+                observed=np.isfinite(current)&(current>0)&(b.volume[:,last]>0)
                 price=pd.DataFrame(b.price).ffill(axis=1).fillna(0).to_numpy()[:,-1]
-                pred=price*np.exp(np.clip(delta,-.5,.7))
+                pred=price.copy()
+                pred[observed]=current[observed]*np.exp(np.clip(delta[observed],-.5,.7))
             pred=np.maximum(pred,0);pred[~ever]=0;arr.append(pred)
         outputs[mode]=np.stack(arr,axis=1)
         emit('FIT',metric,d.months[cutoff],'history',window,mode,'rows',len(X),'sec',round(time.monotonic()-begun,1))
@@ -254,7 +264,7 @@ def scores(y,p):
     den=y.sum()
     return {'wape':float(abs(y-p).sum()/den) if den else None,'bias':float((p-y).sum()/den) if den else None,'actual':float(den)}
 
-def select_recipes(d,metric,origins,by_origin,selection_mode='guarded'):
+def select_recipes(d,metric,origins,by_origin,selection_mode='guarded',guard=ChampionGuard()):
     """Compare all candidates on completed common targets at identical origins.
 
     Candidate training and feature construction end at each historical origin.
@@ -294,7 +304,7 @@ def select_recipes(d,metric,origins,by_origin,selection_mode='guarded'):
         ranked=sorted(candidate_scores,key=lambda row:(float('inf') if row['wape'] is None
                                                         else row['wape'],row['name']))
         losses={name:np.abs(pred-actual).sum(axis=0) for name,pred in pp.items()}
-        guarded_winner,decision=choose_champion(losses,bestbase)
+        guarded_winner,decision=choose_champion(losses,bestbase,guard)
         winner=decision['legacy_best'] if selection_mode=='legacy' else guarded_winner
         decision={**decision,'selected':winner,'mode':selection_mode,
                   'reason':('legacy pooled WAPE winner' if selection_mode=='legacy' else decision['reason'])}
@@ -382,21 +392,27 @@ def dataset_policy(d,metric,cutoff,strategy='hierarchical'):
     if strategy not in ('hierarchical','global'):
         raise ValueError('روش انتخاب مدل باید سلسله‌مراتبی یا Global باشد.')
     configuration=rolling_plan(cutoff,strategy,categories_available=bool(category_dimensions(d)))
+    champion_guard=ChampionGuard()
+    category_guard=CategoryGuard()
+    # The key must identify the actual model and selection configuration.
+    # Use these same guard instances below instead of independent defaults.
+    settings={'backtest':configuration['configuration'],'model':PARAMS,
+              'champion_guard':champion_guard.__dict__,
+              'category_guard':category_guard.__dict__}
     digest=hashlib.sha256(VERSION.encode()+POLICY_VERSION.encode()+metric.encode()+strategy.encode()+
-        json.dumps(configuration['configuration'],sort_keys=True).encode()+
-        json.dumps(ChampionGuard().__dict__,sort_keys=True).encode()+
+        json.dumps(settings,sort_keys=True).encode()+
         data_identity(d,0,cutoff)).hexdigest()[:24]
     cached=OUT/'runtime_policies'/f'{digest}.json';cached.parent.mkdir(exist_ok=True)
     if cached.exists():return json.loads(cached.read_text(encoding='utf-8'))
     origins,holdout=configuration['selection'],configuration['holdout']
     by_origin={o:candidates(d,metric,o) for o in origins}
     mode='guarded' if holdout is not None else 'legacy'
-    policy,_=select_recipes(d,metric,origins,by_origin,selection_mode=mode)
+    policy,_=select_recipes(d,metric,origins,by_origin,selection_mode=mode,guard=champion_guard)
     # The previous Global policy is computed on identical selection observations,
     # without training any additional candidate model.
     legacy_policy=None
     if holdout is not None:
-        legacy_policy,_=select_recipes(d,metric,origins,by_origin,selection_mode='legacy')
+        legacy_policy,_=select_recipes(d,metric,origins,by_origin,selection_mode='legacy',guard=champion_guard)
     policy['_legacy_global']={h:{'name':legacy_policy[h]['name'],
                                  'components':legacy_policy[h]['components']}
                                for h in ('1','2','3')} if legacy_policy is not None else None
@@ -406,7 +422,7 @@ def dataset_policy(d,metric,cutoff,strategy='hierarchical'):
                           'groups_considered':0,'groups_selected':0}
     policy['_holdout']=None
     if holdout is not None:
-        hierarchy=select_category_overrides(d,metric,origins,by_origin,policy)
+        hierarchy=select_category_overrides(d,metric,origins,by_origin,policy,guard=category_guard)
         policy['_hierarchy']=hierarchy
         # Independent audit is REPORT-ONLY: never gate or tune policies on it.
         held=candidates(d,metric,holdout)
@@ -420,7 +436,8 @@ def dataset_policy(d,metric,cutoff,strategy='hierarchical'):
                             'selection_policy_version':POLICY_VERSION,
                             'plan_reason':configuration['reason'],
                             'configuration':configuration['configuration'],
-                            'champion_guard':ChampionGuard().__dict__}
+                            'champion_guard':champion_guard.__dict__,
+                            'category_guard':category_guard.__dict__}
     for h in ('1','2','3'):
         policy[h]['basis']='انتخاب تاریخی Global و در صورت شواهد پایدار، Recipe اختصاصی گروه؛ بدون آموزش جداگانه CatBoost برای هر SKU'
     cached.write_text(json.dumps(policy,ensure_ascii=False,indent=2),encoding='utf-8')
