@@ -702,6 +702,7 @@ function recipeComponent(name){
   const windows=w=>w==='all'?'تمام تاریخچه':/^\d+$/.test(w||'')?persian(Number(w))+' ماه':'';
   const kinds={raw:'تغییر مطلق فروش',scaled:'تغییر مقیاس‌بندی‌شده فروش',log:'تغییر لگاریتمی فروش'};
   const light={last:'آخرین ماه',mean2:'میانگین ۲ ماه',mean3:'میانگین ۳ ماه',seasonal12:'ماه مشابه سال قبل','ses0.2':'هموارسازی نمایی ۰٫۲','ses0.5':'هموارسازی نمایی ۰٫۵','ses0.8':'هموارسازی نمایی ۰٫۸',croston_sba:'Croston-SBA',equal_blend:'ترکیب مساوی روش‌های سبک',price_volume_last:'حجم آخر × روند قیمت',price_volume_mean2:'میانگین حجم ۲ ماه × روند قیمت'};
+  if(name==='price-guard|robust')return {label:'محافظ جهش ارزش واحد',window:'رخدادهای تاریخی هم‌جهت'};
   if(parts[0]==='ml')return {label:'CatBoost — '+(kinds[parts[1]]||parts[1]),window:windows(parts[2])};
   if(parts[0]==='price-volume')return {label:'CatBoost قیمت × حجم ('+(kinds[parts[1]]||parts[1])+')',window:windows(parts[2])};
   if(parts[0]==='light')return {label:'مدل سبک — '+(light[parts[1]]||parts[1]),window:'تاریخچه تا ماه مبدأ'};
@@ -772,7 +773,7 @@ function selectionEvidenceHtml(r){
     '<div class="recipe-code"><bdi dir="ltr">'+escapeHtml(x.name)+'</bdi></div></td><td>'+percent(x.wape)+'</td></tr>').join('');
   const runner=valid.find(x=>x.name!==winner),delta=runner&&rank===0?(runner.wape-valid[0].wape):null;
   const decision=e.selection_decision||r.calibration?.selection_decision;
-  const guarded=decision?.mode==='guarded';
+  const guarded=decision?.mode==='guarded'||e.scope==='matched_shock_events';
   const rejected=Object.entries(e.rejected_candidates||{});
   const rejectDetails=rejected.length
     ?'<details class="model-details"><summary>'+persian(rejected.length)+' Candidate کنارگذاشته‌شده از مقایسه منصفانه</summary>'+
@@ -787,13 +788,13 @@ function selectionEvidenceHtml(r){
     :'';
   const explanation=guarded
     ?(decision.reason==='stable improvement'
-       ?'این Recipe نسبت به مرجع آماری، کاهش خطای کافی و تکرارشونده در چند مبدأ نشان داده است.'
-       :'مدل‌های رقیب در تمام معیارهای پایداری قبول نشدند؛ Recipe آماری مرجع حفظ شده است.')
+       ?'این Recipe نسبت به روش مرجع، کاهش خطای کافی و تکرارشونده در چند مبدأ نشان داده است.'
+       :'مدل‌های رقیب در تمام معیارهای پایداری قبول نشدند؛ Recipe مرجع حفظ شده است.')
     :(rank===0&&runner
        ?'Recipe منتخب کمترین WAPE تاریخی را داشته است.'+(delta!==null?' اختلاف با رقیب بعدی '+new Intl.NumberFormat('fa-IR',{maximumFractionDigits:2}).format(delta*100)+' واحد درصد است.':'')
        :'در حالت Global قبلی، انتخاب با کمترین مجموع خطای مطلق انجام شده است.');
   return '<section class="evidence"><div class="evidence-header"><div><h3>ارزیابی Recipe مبنا در کل Market</h3>'+
-    '<p>مقایسه واقعی روش‌های قابل اجرا روی ماه‌های گذشته، با معیار WAPE؛ مقدار کمتر بهتر است.</p></div>'+
+    '<p>'+(e.scope==='matched_shock_events'?'مقایسه روی رخدادهای هم‌جهت ارزش واحد (دوره‌های انتخاب، نه Holdout).':'مقایسه واقعی روش‌های قابل اجرا روی ماه‌های گذشته، با معیار WAPE؛ مقدار کمتر بهتر است.')+'</p></div>'+
     '<span class="evidence-badge">'+persian(valid.length)+' روش مقایسه‌شده</span></div>'+
     '<div class="evidence-meta">شاخص: '+(r.metric==='volume_kg'?'حجم فروش':'مبلغ فروش')+
     ' · افق: '+persian(e.horizon)+' دوره · سطح خطا: تمام سری‌های سطح مکانی انتخاب‌شده</div>'+
@@ -905,15 +906,16 @@ function labGroupRows(){
     el('labGroupTable').innerHTML='<div class="lab-empty">برای این سطح دادهٔ Holdout موجود نیست. در صورت کافی‌بودن تاریخچه، گروه‌ها در فایل CSV دانلودی هم ارائه می‌شوند.</div>';
     return;
   }
+  const live=rows.some(row=>row.live_hierarchical_wape!==undefined&&row.live_hierarchical_wape!==null);
   const body=rows.map(row=>
     '<tr><td>'+escapeHtml(row.group)+'</td><td>'+labNumber(row.series)+'</td>'+
     '<td>'+labNumber(row.actual)+'</td><td>'+labPercent(row.legacy_global_wape)+'</td>'+
     '<td>'+labPercent(row.global_wape)+'</td><td>'+labPercent(row.hierarchical_wape)+'</td>'+
-    '<td>'+labPercent(row.relative_reduction_vs_legacy)+'</td></tr>'
+    '<td>'+labPercent(row.relative_reduction_vs_legacy)+'</td>'+(live?'<td>'+labPercent(row.live_legacy_global_wape)+'</td><td>'+labPercent(row.live_hierarchical_wape)+'</td>':'')+'</tr>'
   ).join('');
   el('labGroupTable').innerHTML='<div class="lab-table-wrap"><table class="lab-table">'+
     '<thead><tr><th>گروه</th><th>سری‌ها</th><th>مجموع واقعی</th><th>WAPE قبلی</th>'+
-    '<th>WAPE Global محافظه‌کار</th><th>WAPE چندسطحی</th><th>کاهش خطای مطلق نسبت به قبلی</th></tr></thead>'+
+    '<th>WAPE Global محافظه‌کار</th><th>WAPE چندسطحی</th><th>کاهش خطای مطلق نسبت به قبلی</th>'+(live?'<th>WAPE سیاست اجرایی قبلی</th><th>WAPE سیاست اجرایی جدید</th>':'')+'</tr></thead>'+
     '<tbody>'+body+'</tbody></table></div>';
 }
 function renderBacktest(result){
@@ -924,9 +926,16 @@ function renderBacktest(result){
   const guardRows=completed.filter(item=>item.metric==='value_1000_toman'&&item.price_guard_active_at_holdout===true);
   const guardNote=guardRows.length?
     '<div class="model-lab-intro"><strong>قاعده مستقل جهش ارزش واحد در مبدأ آزمون فعال بود</strong>'+
-    '<p>در اجرای واقعی در این مبدأ، قاعده محافظ می‌توانست جایگزین Recipe انتخابی شود. WAPE این قاعده به‌صورت جداگانه: '+
+    '<p>در نسخه قبلی، محافظ به‌اجبار اجرا می‌شد. WAPE همان قاعده روی مبدأ تاریخی: '+
     guardRows.map(item=>'H'+escapeHtml(item.horizon)+': '+labPercent(item.price_guard_wape)).join(' · ')+
     '. این اعداد در انتخاب Recipe استفاده نشده‌اند.</p></div>':'';
+  const liveRows=completed.filter(item=>item.live_audit_scope==='cutoff_safe_policy_replay');
+  const liveNote=liveRows.length?
+    '<section class="evidence"><h3>بازاجرای سیاست واقعی فروش ریالی در مبدأ Holdout</h3>'+
+    '<p class="lab-note">هر سیاست فقط اطلاعات موجود در مبدأ آزمون را دریافت می‌کند. نسخه قبلی محافظ را اجباری اجرا می‌کرد؛ نسخه جدید تنها با شواهد کافی آن را انتخاب می‌کند. این مقایسه یک مبدأ است، نه اثبات برتری همیشگی.</p>'+
+    '<div class="lab-table-wrap"><table class="lab-table"><thead><tr><th>افق</th><th>WAPE نسخه قبلی</th><th>WAPE Global جدید</th><th>WAPE Hierarchical جدید</th><th>کاهش خطا نسبت به قبل</th><th>رخدادهای معتبر</th><th>سری با محافظ منتخب</th></tr></thead><tbody>'+
+    liveRows.map(item=>'<tr><td>H'+escapeHtml(item.horizon)+'</td><td>'+labPercent(item.previous_live_wape)+'</td><td>'+labPercent(item.live_global_wape)+'</td><td>'+labPercent(item.live_hierarchical_wape)+'</td><td>'+labPercent(item.live_relative_reduction_vs_previous)+'</td><td>'+labNumber(item.live_shock_events)+'</td><td>'+labNumber(item.live_specialist_series)+'</td></tr>').join('')+
+    '</tbody></table></div></section>':'';
   const tableRows=rows.map(item=>{
     const available=item.audit_type==='untouched_holdout';
     return '<tr><td>'+escapeHtml(labMetricName(item.metric))+'</td>'+
@@ -978,7 +987,7 @@ function renderBacktest(result){
     '</tr></thead><tbody>'+tableRows+'</tbody></table></div>'+
     '<p class="lab-note">مقدار مثبت «کاهش خطای مطلق» نشان‌دهنده بهبود است؛ مقدار منفی یعنی افت عملکرد. '+
     'اگر فروش واقعی صفر باشد WAPE به‌جای صفر ساختگی با N/A مشخص می‌شود.</p></section>'+
-    charts+
+    charts+liveNote+
     '<section class="evidence"><h3>عملکرد دسته‌بندی‌ها، برندها و SKUها</h3>'+
     '<p class="lab-note">گروه‌ها بر اساس مجموع فروش واقعی مرتب شده‌اند؛ این جدول فقط '+persian(result.preview_limit)+
     ' گروه بزرگ هر سطح را نشان می‌دهد. تمام گروه‌ها و سری‌های منفرد داخل CSV گزارش کامل قابل دانلود هستند.</p>'+
@@ -1008,7 +1017,7 @@ function renderFuture(r){
   const family=recipe.price_guard?'قاعده مقاوم به جهش قیمت':blended?'ترکیب وزنی مدل‌ها':recipeComponent(recipe.name).label;
   const origins=recipe.validation_origins||[];
   const score=selectionScore!==null?selectionScore:(recipe.price_guard?null:benchmarkScore);
-  const scoreLabel=selectionScore!==null?'WAPE انتخاب Global · کل سطح Market':'WAPE آزمون تاریخی نمونه ماست';
+  const scoreLabel=selectionScore!==null?(r.selection_evidence?.scope==='matched_shock_events'?'WAPE انتخاب روی رخدادهای هم‌جهت · Market':'WAPE انتخاب Global · کل سطح Market'):'WAPE آزمون تاریخی نمونه ماست';
   const scorePeriod=selectionScore!==null?
     (origins.length?'مبدأهای '+origins.join('، '):'دوره ارزیابی تاریخی همین فایل'):
     ('آزمون گذشته · '+(r.selected_benchmark?.target||'مجموعه مرجع ماست'));
@@ -1021,6 +1030,15 @@ function renderFuture(r){
     '<strong>'+percent(score)+'</strong><small>'+escapeHtml(scorePeriod)+
     ' · خطای تاریخی، نه درصد اطمینان</small></div>';
   const ariaScore=score!==null?'دو شاخص خلاصه':'یک شاخص خلاصه';
+  const regime=recipe.price_regime;
+  const regimeHtml=regime?.active?
+    '<div class="model-lab-intro"><strong>جهش ارزش واحد فروش مشاهده شد (قیمت ضمنی / Mix)</strong>'+
+    '<p>'+escapeHtml(regime.reason==='matched_event_competition'&&regime.horizon_evidence?.group
+      ?'مدل‌ها روی رخدادهای مشابه رقابت کردند؛ انتخاب محافظ اجباری نیست.'
+      :'شواهد کافی یا Candidate معتبر برای رقابت مشروط در دسترس نیست؛ Recipe عادی حفظ شده است. عدم‌قطعیت بالاتر است.')+
+    ' · تعداد رخدادهای تاریخی: '+persian((regime.origins||[]).length)+
+    ' · سری‌های دارای محافظ منتخب: '+persian(regime.specialist_series||0)+'</p></div>':'';
+
   el('results').innerHTML=
     '<div class="resulthead"><div><div class="eyebrow">FORECAST RESULT</div><h2>پیش‌بینی فروش · <bdi dir="ltr">'+escapeHtml(periodName(r.target,r.period_months))+'</bdi></h2>'+
     '<div class="source">'+persian(r.rows)+' ترکیب مکان/محصول · '+(r.metric==='volume_kg'?'فروش حجمی':'فروش ریالی')+
@@ -1031,7 +1049,7 @@ function renderFuture(r){
     '<div class="legend"><span><i style="background:#355c7d"></i>فروش ثبت‌شده</span>'+
     '<span><i style="background:transparent;border-top:3px dashed #6c5b78;height:0"></i>پیش‌بینی (خط‌چین)</span></div></div>'+
     '<div class="selected-method">Recipe مرجع Global: <strong>'+escapeHtml(family)+'</strong></div>'+
-    categorySelectionHtml(r)+
+    regimeHtml+categorySelectionHtml(r)+
     selectionEvidenceHtml(r)+
     '<details class="model-details"><summary>جزئیات روش، ورودی و ارزیابی</summary>'+
     recipeHtml(r)+
