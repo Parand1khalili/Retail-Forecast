@@ -128,13 +128,18 @@ def select_category_overrides(dataset, metric, origins, by_origin, global_recipe
                     continue
                 candidate = _evaluate(components, by_origin, origins, horizon, rows)
                 losses = np.abs(candidate - values).sum(axis=0)
+                gain = (parent_total - float(losses.sum())) / parent_total
+                # Filter EACH challenger for stability before ranking. A low
+                # pooled-error but unstable candidate must not veto a second,
+                # stable challenger. Compare in native units without a fixed
+                # absolute tolerance that changes the result under rescaling.
+                if gain < guard.min_relative_improvement or not np.all(losses < parent_losses):
+                    continue
                 if best_losses is None or (float(losses.sum()), name) < (float(best_losses.sum()), best_name):
                     best_name, best_losses, best_prediction = name, losses, candidate
             if best_losses is None:
                 continue
             gain = (parent_total - float(best_losses.sum())) / parent_total
-            if gain < guard.min_relative_improvement or not np.all(best_losses < parent_losses - 1e-9):
-                continue
             node = {'path': list(path), 'name': best_name, 'components': catalog[best_name],
                     'parent_recipe': parent_name, 'depth': len(path),
                     'evidence': {'series': len(rows), 'positive_series': len(positive),
