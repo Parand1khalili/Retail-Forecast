@@ -11,7 +11,7 @@ import argparse
 import csv
 from pathlib import Path
 from app_core import Dataset
-from auto_engine import dataset_policy, candidates, guarded_money, automatic_forecast
+from auto_engine import dataset_policy, candidates, guarded_money
 from category_selection import forecast_with_recipes
 from benchmark_levels import compare_levels, error_metrics
 
@@ -32,8 +32,9 @@ def report(dataset, metric, output, detailed_output=None):
         # This uses the SAME historical holdout but never reselects/tunes recipes.
         held=candidates(dataset,metric,holdout_index)
         if metric=='value_1000_toman':
-            # Reconstruct the OLD forced override at the actual holdout origin.
-            # The new live policy is independently replayed below.
+            # The live Value path may override ALL three policy recipes on a
+            # price shift. Report its actual cutoff-safe rule separately.
+            # It is not a fourth competitor selected using holdout targets.
             guard_prediction,guard_info=guarded_money(dataset,holdout_index)
     for horizon in ('1','2','3'):
         stats=audit.get('horizons',{}).get(horizon)
@@ -70,41 +71,6 @@ def report(dataset, metric, output, detailed_output=None):
                            price_guard_mae=guard_stats['mae'],
                            price_guard_bias=guard_stats['bias'],
                            price_guard_absolute_error=guard_stats['absolute_error'])
-            live_details={}
-            if metric=='value_1000_toman':
-                h=int(horizon)
-                actual=dataset.metric(metric)[:,holdout_index+h]
-                # Replay the exact production inference at the historical
-                # cutoff, NOT the recipe fitted using later observations.
-                live, calibration=automatic_forecast(dataset,metric,h,cutoff=holdout_index)
-                live_global,_=automatic_forecast(dataset,metric,h,cutoff=holdout_index,
-                                                  strategy='global')
-                # The previous version forced the specialist for ALL strategies
-                # on an active shock; otherwise both versions are identical.
-                previous=guard_prediction[:,h-1] if guard_prediction is not None else live
-                old_stats=error_metrics(actual,previous)
-                new_stats=error_metrics(actual,live)
-                global_stats=error_metrics(actual,live_global)
-                regime=calibration.get('price_regime') or {}
-                row.update(live_audit_scope='cutoff_safe_policy_replay',
-                           live_hierarchical_wape=new_stats['wape'],
-                           live_global_wape=global_stats['wape'],
-                           previous_live_wape=old_stats['wape'],
-                           live_hierarchical_mae=new_stats['mae'],
-                           previous_live_mae=old_stats['mae'],
-                           live_hierarchical_bias=new_stats['bias'],
-                           previous_live_bias=old_stats['bias'],
-                           live_relative_reduction_vs_previous=(
-                               1-new_stats['absolute_error']/old_stats['absolute_error']
-                               if old_stats['absolute_error']>0 else None),
-                           live_recipe=calibration['name'],
-                           live_regime_reason=regime.get('reason','normal'),
-                           live_shock_origins=','.join(regime.get('origins',[])),
-                           live_shock_events=len(regime.get('origins',[])),
-                           live_specialist_series=regime.get('specialist_series',0))
-                live_details={(item['level'],item['group']):item for item in
-                              compare_levels(dataset,actual,live_global,live,holdout_index,
-                                             legacy=previous)}
             entry=policy[horizon]
             legacy=policy['_legacy_global'][horizon]
             needed={name for recipe in (entry,legacy)
@@ -123,14 +89,10 @@ def report(dataset, metric, output, detailed_output=None):
                 for item in compare_levels(dataset,target_actual,global_prediction,
                                            hierarchical_prediction,holdout_index,
                                            legacy=legacy_prediction):
-                    live_item=live_details.get((item['level'],item['group']))
-                    extra=({'live_'+k:v for k,v in live_item.items()
-                            if k not in ('level','group','series','actual')}
-                           if live_item is not None else {})
                     detailed.append({'metric':metric,'market':market,
                                      'horizon':horizon,'origin':origin,
                                      'target':dataset.months[holdout_index+int(horizon)],
-                                     **item,**extra})
+                                     **item})
         else:
             row={'metric':metric,'market':market,'periodicity':dataset.periodicity,
                  'horizon':horizon,'audit_type':'no_independent_holdout',
@@ -147,11 +109,7 @@ def report(dataset, metric, output, detailed_output=None):
             'groups_improved','groups_deteriorated',
             'groups_unchanged','series_using_override','selection_only',
             'audit_scope','price_guard_active_at_holdout','price_guard_wape',
-            'price_guard_mae','price_guard_bias','price_guard_absolute_error',
-            'live_audit_scope','live_hierarchical_wape','live_global_wape','previous_live_wape',
-            'live_hierarchical_mae','previous_live_mae','live_hierarchical_bias','previous_live_bias',
-            'live_relative_reduction_vs_previous','live_recipe','live_regime_reason',
-            'live_shock_origins','live_shock_events','live_specialist_series']
+            'price_guard_mae','price_guard_bias','price_guard_absolute_error']
     output=Path(output)
     output.parent.mkdir(parents=True,exist_ok=True)
     with output.open('w',newline='',encoding='utf-8-sig') as stream:

@@ -303,7 +303,7 @@ input[type=text]:focus,select:focus{border-color:var(--focus)}
 <option value="global">فقط Global Market (مقایسه با روش قبلی)</option></select>
 <p class="help">CatBoost همچنان روی داده‌های کل Market آموزش می‌بیند؛ در حالت چندسطحی، Recipe برای شاخه‌های دارای شواهد کافی جدا انتخاب می‌شود.</p></div>
 <div class="model-lab-intro"><strong>آزمایش مقایسه‌ای مدل‌ها (Model Lab)</strong>
-<p>در این آزمون سیاست‌های اجرایی Global و Hierarchical و مبنای آخرین دوره در چند مبدأ تاریخی یکسان بازاجرا می‌شوند. آزمون برای کل Market و سطح تجمیع انتخاب‌شده انجام می‌شود؛ فیلترهای برند و SKU فقط در پیش‌بینی عادی کاربرد دارند.</p>
+<p>در این آزمون هر سه روش Legacy Global، Guarded Global و Hierarchical روی یک Holdout تاریخی یکسان مقایسه می‌شوند. آزمون برای کل Market و سطح تجمیع انتخاب‌شده انجام می‌شود؛ فیلترهای برند و SKU فقط در پیش‌بینی عادی کاربرد دارند.</p>
 <div class="field"><label for="backtestMetric">شاخص‌های قابل‌آزمایش</label><select id="backtestMetric">
 <option value="both">هر دو: حجم و ارزش فروش</option><option value="volume_kg">فقط حجم فروش</option>
 <option value="value_1000_toman">فقط ارزش فروش</option></select></div></div>
@@ -495,32 +495,6 @@ function renderSchemaPreview(schema){
       'ابعاد بالا در محاسبات استفاده می‌شوند. برای دیدن و اصلاح سرتیترهای واقعی، فایل Excel را وارد کنید.';
   }
   preview.append(cap);
-  const audit=schema?.integrity;
-  if(audit){
-    const line=document.createElement('div');line.className='schema-caption';
-    line.textContent='کنترل صحت Import: تطبیق مجموع Master و پنل در '+audit.reconciliation.length+
-      ' سطح بازار/محصول · '+audit.sheets.length+' شیت فروش · '+audit.identical_overlaps.length+
-      ' هم‌پوشانی یکسان (بدون دوباره‌شماری).'+
-      (audit.inferred_zero_series_periods?' · هشدار: '+audit.inferred_zero_series_periods+' ترکیب سری/دوره غایب در سطح دارای داده، با فرض فروش صفر وارد شد.':'');
-    preview.append(line);
-    const details=document.createElement('details');details.className='schema-caption';
-    const summary=document.createElement('summary');summary.textContent='جزئیات کنترل داده و موارد خارج از محاسبه';details.append(summary);
-    for(const sh of audit.sheets){
-      const p=document.createElement('p');p.textContent=sh.sheet+' · '+sh.source_sales_rows+' ردیف فروش'+
-        (sh.aggregated_distinct_rows?' · '+sh.aggregated_distinct_rows+' ردیف متمایز در هویت مشترک تجمیع شد (مجموع فروش حفظ شده)':'')+
-        (sh.unavailable_periods.length?' · دوره‌های بدون داده: '+sh.unavailable_periods.join('، '):'')+
-        (Object.keys(sh.excluded_measures).length?' · شاخص‌های خارج از محاسبه: '+Object.entries(sh.excluded_measures).map(([k,v])=>k+' ('+v+')').join('، '):'')+
-        (sh.ignored_columns.length?' · ستون‌های غیر دوره‌ای: '+sh.ignored_columns.join('، '):'')+
-        (sh.excluded_dimensions.length?' · ابعاد تجمیع‌شده با انتخاب کاربر: '+sh.excluded_dimensions.join('، '):'');
-      details.append(p);
-    }
-    for(const sh of audit.skipped_sheets){
-      const p=document.createElement('p');p.textContent=sh.sheet+' · شیت بدون جدول فروش قابل تشخیص؛ خارج از محاسبه';details.append(p);
-    }
-    const download=document.createElement('button');download.type='button';download.className='btn secondary';download.textContent='دانلود گزارش کنترل داده (JSON)';
-    download.onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(audit,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='emrc_data_integrity.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
-    details.append(download);preview.append(details);
-  }
 }
 function setData(next,initial=false){
   // A late startup response must not overwrite an import or frequency choice.
@@ -728,7 +702,6 @@ function recipeComponent(name){
   const windows=w=>w==='all'?'تمام تاریخچه':/^\d+$/.test(w||'')?persian(Number(w))+' ماه':'';
   const kinds={raw:'تغییر مطلق فروش',scaled:'تغییر مقیاس‌بندی‌شده فروش',log:'تغییر لگاریتمی فروش'};
   const light={last:'آخرین ماه',mean2:'میانگین ۲ ماه',mean3:'میانگین ۳ ماه',seasonal12:'ماه مشابه سال قبل','ses0.2':'هموارسازی نمایی ۰٫۲','ses0.5':'هموارسازی نمایی ۰٫۵','ses0.8':'هموارسازی نمایی ۰٫۸',croston_sba:'Croston-SBA',equal_blend:'ترکیب مساوی روش‌های سبک',price_volume_last:'حجم آخر × روند قیمت',price_volume_mean2:'میانگین حجم ۲ ماه × روند قیمت'};
-  if(name==='price-guard|robust')return {label:'محافظ جهش ارزش واحد',window:'رخدادهای تاریخی هم‌جهت'};
   if(parts[0]==='ml')return {label:'CatBoost — '+(kinds[parts[1]]||parts[1]),window:windows(parts[2])};
   if(parts[0]==='price-volume')return {label:'CatBoost قیمت × حجم ('+(kinds[parts[1]]||parts[1])+')',window:windows(parts[2])};
   if(parts[0]==='light')return {label:'مدل سبک — '+(light[parts[1]]||parts[1]),window:'تاریخچه تا ماه مبدأ'};
@@ -799,7 +772,7 @@ function selectionEvidenceHtml(r){
     '<div class="recipe-code"><bdi dir="ltr">'+escapeHtml(x.name)+'</bdi></div></td><td>'+percent(x.wape)+'</td></tr>').join('');
   const runner=valid.find(x=>x.name!==winner),delta=runner&&rank===0?(runner.wape-valid[0].wape):null;
   const decision=e.selection_decision||r.calibration?.selection_decision;
-  const guarded=decision?.mode==='guarded'||e.scope==='matched_shock_events';
+  const guarded=decision?.mode==='guarded';
   const rejected=Object.entries(e.rejected_candidates||{});
   const rejectDetails=rejected.length
     ?'<details class="model-details"><summary>'+persian(rejected.length)+' Candidate کنارگذاشته‌شده از مقایسه منصفانه</summary>'+
@@ -814,13 +787,13 @@ function selectionEvidenceHtml(r){
     :'';
   const explanation=guarded
     ?(decision.reason==='stable improvement'
-       ?'این Recipe نسبت به روش مرجع، کاهش خطای کافی و تکرارشونده در چند مبدأ نشان داده است.'
-       :'مدل‌های رقیب در تمام معیارهای پایداری قبول نشدند؛ Recipe مرجع حفظ شده است.')
+       ?'این Recipe نسبت به مرجع آماری، کاهش خطای کافی و تکرارشونده در چند مبدأ نشان داده است.'
+       :'مدل‌های رقیب در تمام معیارهای پایداری قبول نشدند؛ Recipe آماری مرجع حفظ شده است.')
     :(rank===0&&runner
        ?'Recipe منتخب کمترین WAPE تاریخی را داشته است.'+(delta!==null?' اختلاف با رقیب بعدی '+new Intl.NumberFormat('fa-IR',{maximumFractionDigits:2}).format(delta*100)+' واحد درصد است.':'')
        :'در حالت Global قبلی، انتخاب با کمترین مجموع خطای مطلق انجام شده است.');
   return '<section class="evidence"><div class="evidence-header"><div><h3>ارزیابی Recipe مبنا در کل Market</h3>'+
-    '<p>'+(e.scope==='matched_shock_events'?'مقایسه روی رخدادهای هم‌جهت ارزش واحد (دوره‌های انتخاب، نه Holdout).':'مقایسه واقعی روش‌های قابل اجرا روی ماه‌های گذشته، با معیار WAPE؛ مقدار کمتر بهتر است.')+'</p></div>'+
+    '<p>مقایسه واقعی روش‌های قابل اجرا روی ماه‌های گذشته، با معیار WAPE؛ مقدار کمتر بهتر است.</p></div>'+
     '<span class="evidence-badge">'+persian(valid.length)+' روش مقایسه‌شده</span></div>'+
     '<div class="evidence-meta">شاخص: '+(r.metric==='volume_kg'?'حجم فروش':'مبلغ فروش')+
     ' · افق: '+persian(e.horizon)+' دوره · سطح خطا: تمام سری‌های سطح مکانی انتخاب‌شده</div>'+
@@ -847,8 +820,7 @@ function categorySelectionHtml(r){
       const target=(item.path||[]).join(' / ')||'Global Market';
       const ev=item.group_selection_metrics||{}, group=ev.group||{};
       const evidence=(typeof group.wape==='number'?' · WAPE گروه در انتخاب: '+percent(group.wape):'')+
-        (typeof ev.relative_improvement==='number'?' · بهبود نسبت به مرجع: '+percent(ev.relative_improvement):'')+
-        (item.selection_scope==='matched_shock_events'?' · رخدادهای هم‌جهت':'');
+        (typeof ev.relative_improvement==='number'?' · بهبود نسبت به والد: '+percent(ev.relative_improvement):'');
       const source=item.source==='Category'?'Recipe ویژه گروه':
         item.source==='Parent fallback'?'ارث‌بری از گروه والد':'Fallback به Global';
       return '<div class="detail"><strong>'+escapeHtml(target)+'</strong><span>'+
@@ -870,7 +842,7 @@ function categorySelectionHtml(r){
     (h.legacy_global?' · WAPE Global قبلی: '+(h.legacy_global.wape===null?'N/A':percent(h.legacy_global.wape)):'')+
     ' · گروه‌های بهتر/بدتر: '+persian(h.groups_improved)+' / '+persian(h.groups_deteriorated)+
     ' · این مبدأ برای انتخاب Recipe استفاده نشده است.</span></div>':
-    '<div class="detail"><strong>Holdout مستقل</strong><span>'+(r.calibration?.price_regime?.active?'برای مقایسه اجرای واقعی سیاست جهشی، Model Lab را باز کنید. امتیاز انتخاب، آزمون مستقل نیست.':'به‌دلیل تاریخچه ناکافی یا نبود شرایط لازم، موجود نیست؛ نتایج انتخاب به‌معنای آزمون مستقل نیستند.')+'</span></div>';
+    '<div class="detail"><strong>Holdout مستقل</strong><span>به‌دلیل تاریخچه ناکافی، موجود نیست؛ نتایج انتخاب به‌معنای آزمون مستقل نیستند.</span></div>';
   const levelSummary=info.evaluation_summary||{};
   const levelRows=Object.entries(levelSummary).filter(([level])=>level!=='Series').map(([level,x])=>
     '<div class="detail"><strong>Holdout · '+escapeHtml(level)+'</strong><span>'+
@@ -924,64 +896,53 @@ function labGroupRows(){
   if(!latestLabData)return;
   const metric=el('labMetricView').value,horizon=Number(el('labHorizonView').value);
   const level=el('labLevelView').value;
-  const nested=latestLabData.evaluation_type==='nested_walk_forward';
   const group=latestLabData.group_totals.find(item=>item.metric===metric&&item.horizon===horizon&&item.level===level);
   const rows=latestLabData.group_preview.filter(item=>item.metric===metric&&Number(item.horizon)===horizon&&item.level===level);
   el('labGroupCount').textContent=group?
     persian(group.groups)+' گروه · '+persian(group.improved)+' بهتر · '+persian(group.deteriorated)+
-    ' بدتر · '+persian(group.unchanged)+' بدون تغییر، نسبت به '+(nested?'آخرین دوره':'Legacy Global'):'گروهی برای این انتخاب موجود نیست.';
+    ' بدتر · '+persian(group.unchanged)+' بدون تغییر، نسبت به Legacy Global':'گروهی برای این انتخاب موجود نیست.';
   if(!rows.length){
     el('labGroupTable').innerHTML='<div class="lab-empty">برای این سطح دادهٔ Holdout موجود نیست. در صورت کافی‌بودن تاریخچه، گروه‌ها در فایل CSV دانلودی هم ارائه می‌شوند.</div>';
     return;
   }
-  const live=rows.some(row=>row.live_hierarchical_wape!==undefined&&row.live_hierarchical_wape!==null);
   const body=rows.map(row=>
     '<tr><td>'+escapeHtml(row.group)+'</td><td>'+labNumber(row.series)+'</td>'+
-    '<td>'+labNumber(row.actual)+'</td><td>'+labPercent(nested?row.baseline_wape:row.legacy_global_wape)+'</td>'+
+    '<td>'+labNumber(row.actual)+'</td><td>'+labPercent(row.legacy_global_wape)+'</td>'+
     '<td>'+labPercent(row.global_wape)+'</td><td>'+labPercent(row.hierarchical_wape)+'</td>'+
-    '<td>'+labPercent(nested?row.relative_reduction_vs_baseline:row.relative_reduction_vs_legacy)+'</td>'+(live?'<td>'+labPercent(row.live_legacy_global_wape)+'</td><td>'+labPercent(row.live_hierarchical_wape)+'</td>':'')+'</tr>'
+    '<td>'+labPercent(row.relative_reduction_vs_legacy)+'</td></tr>'
   ).join('');
   el('labGroupTable').innerHTML='<div class="lab-table-wrap"><table class="lab-table">'+
-    '<thead><tr><th>گروه</th><th>'+(nested?'سری‌ها (حداکثر در هر مبدأ)':'سری‌ها')+'</th><th>مجموع واقعی</th><th>'+(nested?'WAPE آخرین دوره':'WAPE قبلی')+'</th>'+
-    '<th>'+(nested?'WAPE Global اجرایی':'WAPE Global محافظه‌کار')+'</th><th>WAPE چندسطحی</th><th>کاهش خطای مطلق نسبت به '+(nested?'مبنا':'قبلی')+'</th>'+(live?'<th>WAPE سیاست اجرایی قبلی</th><th>WAPE سیاست اجرایی جدید</th>':'')+'</tr></thead>'+
+    '<thead><tr><th>گروه</th><th>سری‌ها</th><th>مجموع واقعی</th><th>WAPE قبلی</th>'+
+    '<th>WAPE Global محافظه‌کار</th><th>WAPE چندسطحی</th><th>کاهش خطای مطلق نسبت به قبلی</th></tr></thead>'+
     '<tbody>'+body+'</tbody></table></div>';
 }
 function renderBacktest(result){
   latestLabData=result;
   const metrics=result.metrics||[],rows=result.summaries||[];
-  const nested=result.evaluation_type==='nested_walk_forward';
-  const completed=rows.filter(item=>item.audit_type==='untouched_holdout'||item.audit_type==='nested_walk_forward');
+  const completed=rows.filter(item=>item.audit_type==='untouched_holdout');
   const total=completed.length;
-  const singleOrigin=nested&&completed.length&&completed.every(item=>item.origin_count===1);
   const guardRows=completed.filter(item=>item.metric==='value_1000_toman'&&item.price_guard_active_at_holdout===true);
   const guardNote=guardRows.length?
     '<div class="model-lab-intro"><strong>قاعده مستقل جهش ارزش واحد در مبدأ آزمون فعال بود</strong>'+
-    '<p>در نسخه قبلی، محافظ به‌اجبار اجرا می‌شد. WAPE همان قاعده روی مبدأ تاریخی: '+
+    '<p>در اجرای واقعی در این مبدأ، قاعده محافظ می‌توانست جایگزین Recipe انتخابی شود. WAPE این قاعده به‌صورت جداگانه: '+
     guardRows.map(item=>'H'+escapeHtml(item.horizon)+': '+labPercent(item.price_guard_wape)).join(' · ')+
     '. این اعداد در انتخاب Recipe استفاده نشده‌اند.</p></div>':'';
-  const liveRows=completed.filter(item=>item.live_audit_scope==='cutoff_safe_policy_replay');
-  const liveNote=liveRows.length?
-    '<section class="evidence"><h3>بازاجرای سیاست واقعی فروش ریالی در مبدأ Holdout</h3>'+
-    '<p class="lab-note">هر سیاست فقط اطلاعات موجود در مبدأ آزمون را دریافت می‌کند. نسخه قبلی محافظ را اجباری اجرا می‌کرد؛ نسخه جدید تنها با شواهد کافی آن را انتخاب می‌کند. این مقایسه یک مبدأ است، نه اثبات برتری همیشگی.</p>'+
-    '<div class="lab-table-wrap"><table class="lab-table"><thead><tr><th>افق</th><th>WAPE نسخه قبلی</th><th>WAPE Global جدید</th><th>WAPE Hierarchical جدید</th><th>کاهش خطا نسبت به قبل</th><th>رخدادهای معتبر</th><th>سری با محافظ منتخب</th></tr></thead><tbody>'+
-    liveRows.map(item=>'<tr><td>H'+escapeHtml(item.horizon)+'</td><td>'+labPercent(item.previous_live_wape)+'</td><td>'+labPercent(item.live_global_wape)+'</td><td>'+labPercent(item.live_hierarchical_wape)+'</td><td>'+labPercent(item.live_relative_reduction_vs_previous)+'</td><td>'+labNumber(item.live_shock_events)+'</td><td>'+labNumber(item.live_specialist_series)+'</td></tr>').join('')+
-    '</tbody></table></div></section>':'';
   const tableRows=rows.map(item=>{
-    const available=item.audit_type==='untouched_holdout'||item.audit_type==='nested_walk_forward';
+    const available=item.audit_type==='untouched_holdout';
     return '<tr><td>'+escapeHtml(labMetricName(item.metric))+'</td>'+
       '<td>H'+escapeHtml(item.horizon)+'</td>'+
-      '<td>'+ (available?labPercent(nested?item.baseline_wape:item.legacy_global_wape):'—')+'</td>'+
+      '<td>'+ (available?labPercent(item.legacy_global_wape):'—')+'</td>'+
       '<td>'+ (available?labPercent(item.global_wape):'—')+'</td>'+
       '<td>'+ (available?labPercent(item.hierarchical_wape):'—')+'</td>'+
-      '<td>'+ (available?labPercent(nested?item.relative_reduction_vs_baseline:item.relative_reduction_vs_legacy):'—')+'</td>'+
-      '<td>'+ (available?escapeHtml(item.origin)+(nested?' · '+labNumber(item.origin_count)+' مبدأ':''):'بدون Holdout مستقل')+'</td></tr>';
+      '<td>'+ (available?labPercent(item.relative_reduction_vs_legacy):'—')+'</td>'+
+      '<td>'+ (available?escapeHtml(item.origin):'بدون Holdout مستقل')+'</td></tr>';
   }).join('');
   const charts=metrics.map(metric=>{
     const valid=completed.filter(item=>item.metric===metric);
     return '<section class="evidence"><h3>'+escapeHtml(labMetricName(metric))+'</h3>'+
       (valid.length?valid.map(item=>{
-        const values=[{name:nested?'Last Observation':'Legacy Global',value:nested?item.baseline_wape:item.legacy_global_wape,style:'legacy'},
-          {name:nested?'Global':'Guarded Global',value:item.global_wape,style:'guarded'},
+        const values=[{name:'Legacy Global',value:item.legacy_global_wape,style:'legacy'},
+          {name:'Guarded Global',value:item.global_wape,style:'guarded'},
           {name:'Hierarchical',value:item.hierarchical_wape,style:'hierarchical'}];
         const finite=values.map(item=>Number(item.value)).filter((v,i)=>values[i].value!==null&&Number.isFinite(v));
         const largest=Math.max(1e-9,...finite);
@@ -993,31 +954,31 @@ function renderBacktest(result){
             '<span>'+labPercent(p.value)+'</span></div>';
         }).join('');
         return '<div class="lab-horizon"><h4>افق H'+escapeHtml(item.horizon)+
-          (nested?' · '+labNumber(item.origin_count)+' مبدأ آزمون: ':' · مبدأ آزمون: ')+'<bdi dir="ltr">'+escapeHtml(item.origin)+'</bdi></h4>'+
+          ' · مبدأ آزمون: <bdi dir="ltr">'+escapeHtml(item.origin)+'</bdi></h4>'+
           '<div class="lab-bars">'+lines+'</div></div>';
       }).join(''):'<div class="lab-empty">این داده تاریخچه کافی برای Holdout مستقل ندارد؛ نتیجه‌ای به‌عنوان دقت مستقل گزارش نمی‌شود.</div>')+
       '</section>';
   }).join('');
   el('results').innerHTML='<div class="resulthead"><div>'+
-    '<div class="eyebrow">EMRC · MODEL LAB</div><h2>'+(nested?'Nested Walk-Forward · بازاجرای تاریخی برنامه':'مقایسه تاریخی Recipeها')+'</h2>'+
+    '<div class="eyebrow">EMRC · MODEL LAB</div><h2>مقایسه تاریخی Recipeها</h2>'+
     '<div class="source">'+escapeHtml(result.source)+' · Market: '+escapeHtml(result.market)+
     ' · '+(result.periodicity==='bimonthly'?'دوماهه':'ماهانه')+'</div></div>'+
-    '<span class="badge">'+(total?(singleOrigin?'فقط یک مبدأ خارج از نمونه':'ارزیابی مستقل انجام شد'):'Holdout کافی نیست')+'</span></div>'+
+    '<span class="badge">'+(total?'ارزیابی مستقل انجام شد':'Holdout کافی نیست')+'</span></div>'+
     '<div class="lab-meta"><span>'+persian(result.series)+' سری</span>'+
     '<span>'+persian(result.periods)+' دوره تاریخی</span>'+
     '<span>'+persian(metrics.length)+' شاخص</span><span>افق‌های H1 / H2 / H3</span></div>'+
     '<div class="model-lab-intro"><strong>این جدول چه چیزی را مقایسه می‌کند؟</strong>'+
-    '<p>'+(nested?'در هر مبدأ، موتور عملیاتی Global و Hierarchical فقط با تاریخچه همان زمان دوباره مدل و Recipe را انتخاب می‌کند؛ مبنا آخرین فروش مشاهده‌شده است. حداکثر شش بلوک سه‌دوره‌ای غیرهم‌پوشان بررسی می‌شوند. تفاوت Global و Hierarchical شامل تمام تفاوت‌های سیاست اجرایی است، نه فقط Category Override. آزمون با Master فعلی بازسازی شده، نه نسخه‌های تاریخی منتشرشده؛ سری بدون سابقه مثبت صفر پیش‌بینی می‌شود و فروش آینده آن در خطا منظور می‌شود. ':'سه سیاست انتخاب Recipe ثابت، روی اهداف تاریخی یکسان مقایسه شده‌اند؛ این آزمون بازاجرای کامل برنامه در هر تاریخ گذشته نیست. Legacy Global در این مقایسه روی همان مبدأهای انتخاب مشترک ارزیابی شده و لزوماً همان خروجی نسخه عملیاتی قبلی نیست. ')+
+    '<p>سه سیاست انتخاب Recipe ثابت، روی اهداف تاریخی یکسان مقایسه شده‌اند؛ این آزمون بازاجرای کامل برنامه در هر تاریخ گذشته نیست. Legacy Global در این مقایسه روی همان مبدأهای انتخاب مشترک ارزیابی شده و لزوماً همان خروجی نسخه عملیاتی قبلی نیست. '+
     'WAPE از مجموع قدرمطلق خطای سری‌های واقعی محاسبه می‌شود، نه از اختلاف مجموع کل فروش. '+
-    'نتیجه این آزمون فقط شواهد عملکرد تاریخی است؛ به‌طور خودکار Recipe آینده را بر اساس Holdout تغییر نمی‌دهد. '+(nested?'Price Guard در بازاجرای واقعی Value لحاظ شده است. جزئیات هر مبدأ و اهداف آن در CSV جداگانه گزارش می‌شود.':'قاعده محافظ جهش ارزش واحد برای مبلغ فروش جدا از این سه Recipe است.')+'</p></div>'+guardNote+
-    '<section class="evidence"><h3>'+(nested?'خلاصه تجمیعی روی اهداف خارج از نمونه':'خلاصه مقایسه روی Holdout مستقل')+'</h3>'+
+    'نتیجه این آزمون فقط شواهد عملکرد تاریخی است؛ به‌طور خودکار Recipe آینده را بر اساس Holdout تغییر نمی‌دهد. قاعده محافظ جهش ارزش واحد برای مبلغ فروش جدا از این سه Recipe است.</p></div>'+guardNote+
+    '<section class="evidence"><h3>خلاصه مقایسه روی Holdout مستقل</h3>'+
     '<div class="lab-table-wrap"><table class="lab-table"><thead><tr>'+
-    '<th>شاخص</th><th>افق</th><th>'+(nested?'Last Observation':'Legacy Global')+'</th><th>'+(nested?'Global':'Guarded Global')+'</th>'+
-    '<th>Hierarchical</th><th>تغییر نسبت به '+(nested?'مبنا':'Legacy')+'</th><th>مبدأ آزمون</th>'+
+    '<th>شاخص</th><th>افق</th><th>Legacy Global</th><th>Guarded Global</th>'+
+    '<th>Hierarchical</th><th>تغییر نسبت به Legacy</th><th>مبدأ آزمون</th>'+
     '</tr></thead><tbody>'+tableRows+'</tbody></table></div>'+
     '<p class="lab-note">مقدار مثبت «کاهش خطای مطلق» نشان‌دهنده بهبود است؛ مقدار منفی یعنی افت عملکرد. '+
     'اگر فروش واقعی صفر باشد WAPE به‌جای صفر ساختگی با N/A مشخص می‌شود.</p></section>'+
-    charts+liveNote+
+    charts+
     '<section class="evidence"><h3>عملکرد دسته‌بندی‌ها، برندها و SKUها</h3>'+
     '<p class="lab-note">گروه‌ها بر اساس مجموع فروش واقعی مرتب شده‌اند؛ این جدول فقط '+persian(result.preview_limit)+
     ' گروه بزرگ هر سطح را نشان می‌دهد. تمام گروه‌ها و سری‌های منفرد داخل CSV گزارش کامل قابل دانلود هستند.</p>'+
@@ -1030,7 +991,7 @@ function renderBacktest(result){
     '<p class="lab-note" id="labGroupCount" aria-live="polite"></p>'+
     '<div id="labGroupTable"></div></section>'+
     '<div class="lab-note">Market و سطح تجمیع انتخاب‌شده مرجع این آزمون هستند. فیلترهای Brand و SKU '+
-    'برای انتخاب Recipe عمومیِ آزمون اعمال نمی‌شوند. در داده کوتاه‌تر از حد لازم، هیچ ادعای بهبود مستقل ثبت نمی‌شود. حداقل ۲۱ دوره برای یک مبدأ کامل لازم است.</div>';
+    'برای انتخاب Recipe عمومیِ آزمون اعمال نمی‌شوند. در داده کوتاه‌تر از حد لازم، هیچ ادعای بهبود مستقل ثبت نمی‌شود.</div>';
   el('labMetricView').value=metrics[0]||'';
   el('labHorizonView').value='1';
   el('labMetricView').onchange=labGroupLevels;
@@ -1047,7 +1008,7 @@ function renderFuture(r){
   const family=recipe.price_guard?'قاعده مقاوم به جهش قیمت':blended?'ترکیب وزنی مدل‌ها':recipeComponent(recipe.name).label;
   const origins=recipe.validation_origins||[];
   const score=selectionScore!==null?selectionScore:(recipe.price_guard?null:benchmarkScore);
-  const scoreLabel=selectionScore!==null?(r.selection_evidence?.scope==='matched_shock_events'?'WAPE انتخاب روی رخدادهای هم‌جهت · Market':'WAPE انتخاب Global · کل سطح Market'):'WAPE آزمون تاریخی نمونه ماست';
+  const scoreLabel=selectionScore!==null?'WAPE انتخاب Global · کل سطح Market':'WAPE آزمون تاریخی نمونه ماست';
   const scorePeriod=selectionScore!==null?
     (origins.length?'مبدأهای '+origins.join('، '):'دوره ارزیابی تاریخی همین فایل'):
     ('آزمون گذشته · '+(r.selected_benchmark?.target||'مجموعه مرجع ماست'));
@@ -1060,15 +1021,6 @@ function renderFuture(r){
     '<strong>'+percent(score)+'</strong><small>'+escapeHtml(scorePeriod)+
     ' · خطای تاریخی، نه درصد اطمینان</small></div>';
   const ariaScore=score!==null?'دو شاخص خلاصه':'یک شاخص خلاصه';
-  const regime=recipe.price_regime;
-  const regimeHtml=regime?.active?
-    '<div class="model-lab-intro"><strong>جهش ارزش واحد فروش مشاهده شد (قیمت ضمنی / Mix)</strong>'+
-    '<p>'+escapeHtml(regime.reason==='matched_event_competition'&&regime.horizon_evidence?.group
-      ?'مدل‌ها روی رخدادهای مشابه رقابت کردند؛ انتخاب محافظ اجباری نیست.'
-      :'شواهد کافی یا Candidate معتبر برای رقابت مشروط در دسترس نیست؛ Recipe عادی حفظ شده است. عدم‌قطعیت بالاتر است.')+
-    ' · تعداد رخدادهای تاریخی: '+persian((regime.origins||[]).length)+
-    ' · سری‌های دارای محافظ منتخب: '+persian(regime.specialist_series||0)+'</p></div>':'';
-
   el('results').innerHTML=
     '<div class="resulthead"><div><div class="eyebrow">FORECAST RESULT</div><h2>پیش‌بینی فروش · <bdi dir="ltr">'+escapeHtml(periodName(r.target,r.period_months))+'</bdi></h2>'+
     '<div class="source">'+persian(r.rows)+' ترکیب مکان/محصول · '+(r.metric==='volume_kg'?'فروش حجمی':'فروش ریالی')+
@@ -1079,7 +1031,7 @@ function renderFuture(r){
     '<div class="legend"><span><i style="background:#355c7d"></i>فروش ثبت‌شده</span>'+
     '<span><i style="background:transparent;border-top:3px dashed #6c5b78;height:0"></i>پیش‌بینی (خط‌چین)</span></div></div>'+
     '<div class="selected-method">Recipe مرجع Global: <strong>'+escapeHtml(family)+'</strong></div>'+
-    regimeHtml+categorySelectionHtml(r)+
+    categorySelectionHtml(r)+
     selectionEvidenceHtml(r)+
     '<details class="model-details"><summary>جزئیات روش، ورودی و ارزیابی</summary>'+
     recipeHtml(r)+
@@ -1123,7 +1075,7 @@ el('runBacktest').onclick=async()=>{
   try{
     lockButtons(true);
     status('در حال آموزش و مقایسه مدل‌ها روی داده‌های تاریخی؛ این آزمون ممکن است از پیش‌بینی عادی طولانی‌تر باشد.','working');
-    timer=setInterval(()=>status('در حال اجرای Nested Walk-Forward و آزمون مستقل… '+persian(Math.floor((Date.now()-begin)/1000))+' ثانیه','working'),1000);
+    timer=setInterval(()=>status('در حال اجرای Rolling Backtest و آزمون مستقل… '+persian(Math.floor((Date.now()-begin)/1000))+' ثانیه','working'),1000);
     const result=await post('/api/backtest',{
       market:filters.Market||null,
       grain:filters['Element Caption']||filters.ElementCaption||null,

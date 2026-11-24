@@ -29,7 +29,7 @@ def colnum(ref):
         n=n*26+ord(c.upper())-64
     return n-1
 
-def read_sheet(z, shared, xml, with_row_number=False):
+def read_sheet(z, shared, xml):
     """Yield dictionaries per row without loading a full 100+ MB workbook."""
     with z.open(xml) as f:
         for _,el in ET.iterparse(f,events=('end',)):
@@ -39,33 +39,20 @@ def read_sheet(z, shared, xml, with_row_number=False):
                 v=c.find(M+'v');value=v.text if v is not None else None
                 if c.attrib.get('t')=='s' and value is not None:value=shared[int(value)]
                 elif c.attrib.get('t')=='inlineStr':value=''.join(t.text or '' for t in c.iter(M+'t'))
-                if c.attrib.get('t') in ('b','e'):value='[invalid Excel cell: '+str(value)+']'
-                if value is not None:
-                    idx=colnum(c.attrib['r'])
-                    if idx in vals:raise ValueError('سلول تکراری در یک ردیف Excel وجود دارد.')
-                    vals[idx]=value
-            row_number=el.attrib.get('r','?')
+                if value is not None:vals[colnum(c.attrib['r'])]=value
             el.clear()
-            yield (row_number,vals) if with_row_number else vals
+            yield vals
 
 def parse_master(path,mapping=None):
-    """Fail closed on ambiguous sales observations; audit every accepted period."""
     mapping=mapping or {}
     periodicity=mapping.get('periodicity','monthly')
     if periodicity not in ('monthly','bimonthly'):raise ValueError('نوع دوره باید ماهانه یا دوماهه باشد.')
     period_months=1 if periodicity=='monthly' else 2
-    opposite='bimonthly' if periodicity=='monthly' else 'monthly'
     manual_fields=mapping.get('fields',{})
     manual_measures=mapping.get('measure_values',{})
     manual_units=mapping.get('units',{})
-    if any(k not in METRICS for k in (*manual_measures,*manual_units)):
-        raise ValueError('نگاشت شاخص فروش نامعتبر است.')
-    requested_measures=[normalized(v) for v in manual_measures.values() if str(v).strip()]
-    if len(set(requested_measures))!=len(requested_measures):
-        raise ValueError('یک نام شاخص نمی‌تواند هم حجم و هم مبلغ باشد.')
-    sheets=[];units={};preview=None;layout=None;skipped=[];sheet_audits=[]
-    grain_labels={'sku','skus','product','products','company','companies','brand','subbrand',
-                  'sub brand','category','subcategory','sub category','total','all products','all'}
+    sheets=[];pending_prompt=None;units={};dimension_labels={};shown_dimensions=set();preview=None
+    diagnostics=[]
     with zipfile.ZipFile(path) as z:
         shared=[]
         if 'xl/sharedStrings.xml' in z.namelist():
@@ -77,311 +64,130 @@ def parse_master(path,mapping=None):
         rels=ET.fromstring(z.read('xl/_rels/workbook.xml.rels'))
         targets={r.attrib['Id']:r.attrib['Target'] for r in rels}
         for sh in wb.find(M+'sheets'):
-            name=sh.attrib['name']
             t=targets[sh.attrib[R+'id']].replace('\\','/')
             xml=t.lstrip('/') if t.startswith('/') else 'xl/'+t
-            rows=read_sheet(z,shared,xml,with_row_number=True)
-            head=None;possible=False;wrong_frequency=False
+            rows=read_sheet(z,shared,xml)
+            head=None;months={}
             for _ in range(10):
-                try:_,candidate=next(rows)
+                try:candidate=next(rows)
                 except StopIteration:break
                 maybe=months_in_header(candidate,periodicity)
-                alternative=months_in_header(candidate,opposite)
-                guessed,_=resolve_fields(candidate)
-                possible |= bool(maybe or alternative or 'Measure' in guessed)
-                wrong_frequency |= len(alternative)>=2
-                if len(maybe)>=2:head=candidate;break
-            if head is None:
-                # Scan the remaining rows for a delayed/unsupported sales table.
-                # Non-sales worksheets are recorded, never silently discarded.
-                for _,candidate in rows:
-                    if (months_in_header(candidate,periodicity) or months_in_header(candidate,opposite)
-                            or any(metric_kind(v) for v in candidate.values())):
-                        possible=True;break
-                if wrong_frequency:raise ValueError(f'شیت {name}: نوع دوره انتخاب‌شده با ستون‌ها سازگار نیست.')
-                if possible:raise ValueError(f'شیت {name}: ساختار یا دوره‌های جدول فروش قابل تشخیص نیست؛ سرتیتر باید در ده ردیف اول باشد.')
-                skipped.append({'sheet':name,'reason':'no_recognised_sales_table'})
+                alternative=months_in_header(candidate,'bimonthly' if periodicity=='monthly' else 'monthly')
+                if len(maybe)>=2:head,months=candidate,maybe;break
+                if len(alternative)>=2:
+                    diagnostics.append(f'شیت {sh.attrib["name"]}: نوع دوره انتخاب‌شده با ستون‌ها سازگار نیست؛ گزینه ماهانه/دوماهه را تغییر دهید.')
+            if head is None:continue
+            # Resolve the Measure/Index Name boundary BEFORE checking duplicate
+            # months. Date-shaped category headers before it are not time columns.
+            fields,_,categories,detected_months,_=detect_layout(head,mapping)
+            if (any(field not in fields for field in REQUIRED) or
+                any(fields[field] not in categories for field in ['City','Brand'] if field in fields) or
+                len(detected_months)<2):
+                if pending_prompt is None:
+                    pending_prompt=mapping_prompt(sh.attrib['name'],head,fields,
+                                                  category_columns=categories,dates=detected_months)
                 continue
-            fields,_,categories,months,ignored=detect_layout(head,mapping)
-            def prompt(message,examples=None):
-                info=mapping_prompt(name,head,fields,examples,categories,months)
-                info['message']=f'شیت {name}: {message}'
-                return SchemaError(info)
-            if (any(field not in fields for field in REQUIRED)
-                or any(field not in fields for field,v in manual_fields.items() if str(v).strip() not in ('','*'))
-                or any(fields[field] not in categories for field in ['City','Brand'] if field in fields)
-                or len(months)<2):
-                raise prompt('نگاشت ستون‌های اجباری یا دستی معتبر نیست؛ ساختار را تأیید کنید.')
-            boundary=fields['Measure']
-            before=[i for i in sorted(head) if i<boundary and str(head[i]).strip()]
-            if any(i>=boundary for f,i in fields.items() if f!='Measure'):
-                raise prompt('ستون‌های دسته‌بندی باید قبل از شاخص فروش باشند.')
-            all_names=[normalized(head[i]) for i in before]
-            if len(set(all_names))!=len(all_names):
-                raise ValueError(f'شیت {name}: نام ستون‌های دسته‌بندی تکراری است.')
-            if any(i>boundary for i in months_in_header(head,opposite)):
-                raise ValueError(f'شیت {name}: نوع دوره ماهانه و دوماهه در یک جدول مخلوط است.')
+            months=detected_months
             if len(set(months.values()))!=len(months):
-                raise ValueError(f'شیت {name}: چند ستون برای یک دوره وجود دارد.')
-            selected=mapping.get('dimension_columns')
-            if selected is not None and not set(map(normalized,selected)).issubset(set(all_names)):
-                raise prompt('ستون دسته‌بندی انتخاب‌شده در فایل موجود نیست.')
-            grain_col=next((i for i in before if normalized(head[i])=='elementcaption'),None)
-            if grain_col is not None and grain_col not in categories:
-                raise prompt('Element Caption برای کنترل سطح تجمیع نباید حذف شود.')
-            # Series identity is not full-row identity. Distinct source rows may
-            # legitimately contribute to one series; exact duplicate rows are rejected.
-            # All pre-measure dimensions are retained for pairing before projection.
-            field_by_col={i:f for f,i in fields.items()}
-            raw_cols=sorted(before,key=lambda i:normalized(field_by_col.get(i,head[i])))
-            raw_ids=tuple(normalized(field_by_col.get(i,head[i])) for i in raw_cols)
-            if len(set(raw_ids))!=len(raw_ids):
-                raise prompt('دو ستون به یک هویت دسته‌بندی نگاشت شده‌اند.')
-            extras=([('Market',fields['Market'])] if 'Market' in fields else [])+[
-                ('Element Caption' if normalized(head[i])=='elementcaption' else str(head[i]),i)
-                for i in categories if i not in fields.values()]
-            extras.sort(key=lambda item:normalized(item[0]))
-            dims=DIMS+[label for label,_ in extras]
-            if len(set(map(normalized,dims)))!=len(dims):
-                raise prompt('نام ابعاد خروجی تکراری است.')
-            projection=[fields.get(dim) if fields.get(dim) in categories else None for dim in DIMS]+[i for _,i in extras]
-            projected_ids=tuple(normalized(d) for d in dims)
-            current_layout=(raw_ids,projected_ids,tuple(i is not None for i in projection))
-            if layout is None:
-                layout=current_layout;output_dims=dims
-            elif layout!=current_layout:
-                raise ValueError(f'شیت {name}: ابعاد جدول با شیت‌های فروش دیگر یکسان نیست؛ ترکیب خودکار امن نیست.')
-            shown=[d for d,i in zip(dims,projection) if i is not None]
-            ordered=sorted(months,key=lambda i:months[i])
-            dates=[months[i] for i in ordered]
-            bykey={};projected={};seen=set();seen_measures=set();labels={};excluded=defaultdict(int)
-            row_fingerprints={};identity_counts=defaultdict(int);source_sales_rows=0
-            collision_examples=[]
-            raw_totals=defaultdict(lambda:np.zeros((2,len(ordered))))
+                raise ValueError(f'در شیت {sh.attrib["name"]} چند ستون برای یک ماه وجود دارد.')
+            # Unknown pre-measure columns remain categorical features, not discarded.
+            extras=([('Market',fields['Market'])] if 'Market' in fields else [])+[(str(head[i]),i) for i in categories if i not in fields.values()]
+            if len({normalized(name) for name,_ in extras})!=len(extras):
+                raise ValueError('نام ستون‌های دسته‌بندی تکراری است؛ عنوان‌های متفاوت تعیین کنید.')
+            for name,_ in extras:dimension_labels.setdefault(normalized(name),name)
+            shown_dimensions.update(field for field in DIMS if field in fields and fields[field] in categories)
+            ordered=sorted(months)
+            bykey=defaultdict(lambda:np.zeros((2,len(ordered)),dtype=float))
+            metric_keys=[set(),set()]
             valid=np.zeros(len(ordered),dtype=int);missing=np.zeros(len(ordered),dtype=int)
-            scope_by_key={}
-            for row_number,vals in rows:
-                metric=vals.get(boundary)
-                if metric is not None:seen_measures.add(str(metric))
-                auto_kind=metric_kind(metric)
+            seen_measures=set();labels={}
+            for vals in rows:
+                metric=vals.get(fields['Measure'])
+                if metric is not None and len(seen_measures)<12:seen_measures.add(str(metric))
                 kind=metric_kind(metric,manual_measures)
-                if kind is None:
-                    if not str(metric or '').strip() and any(str(vals.get(i,'')).strip() for i in ordered):
-                        raise ValueError(f'شیت {name}: ردیف دارای مقدار دوره بدون نام شاخص است.')
-                    if str(metric or '').strip():
-                        s=normalized(metric)
-                        # Unknown sales-like indicators require explicit mapping;
-                        # shares/distribution/other metrics are not volume/value.
-                        if ('sales' in s or 'فروش' in s or 'turnover' in s) and not any(x in s for x in ('share','percent','درصد','سهم')) and '%' not in str(metric):
-                            if not all(manual_measures.get(k) for k in METRICS):
-                                raise prompt('شاخص فروش ناشناخته است؛ نام دقیق حجم و مبلغ را تعیین کنید.',sorted(seen_measures))
-                        excluded[str(metric)]+=1
-                    continue
-                if kind not in METRICS:raise prompt('نوع شاخص فروش نامعتبر است.')
-                if auto_kind is not None and auto_kind!=kind:
-                    raise prompt('نگاشت دستی حجم و مبلغ با نوع شاخص شناخته‌شده تعارض دارد.',sorted(seen_measures))
-                mi=0 if kind=='volume_kg' else 1
-                unit=metric_unit(kind,metric)
-                unknown=unit in ('واحد حجم فایل','واحد مبلغ فایل')
-                override=manual_units.get(kind)
-                if override and str(override).strip():
-                    declared=metric_unit(kind,str(override))
-                    if declared in ('واحد حجم فایل','واحد مبلغ فایل'):declared=str(override).strip()
-                    if not unknown and declared!=unit:
-                        raise ValueError(f'شیت {name}: واحد دستی شاخص {metric} با واحد صریح فایل سازگار نیست.')
-                    unit=declared;unknown=False
-                if unknown:raise prompt('واحد شاخص فروش نامشخص است؛ واحد واقعی فایل را تعیین کنید.',sorted(seen_measures))
-                if kind in units and units[kind]!=unit:
-                    raise ValueError(f'شیت {name}: واحد شاخص {kind} متفاوت است؛ ترکیب بدون تبدیل مجاز نیست.')
-                units[kind]=unit
-                if kind in labels and normalized(labels[kind])!=normalized(metric):
-                    raise prompt('چند نام متفاوت برای یک شاخص فروش وجود دارد؛ جدول یا نام شاخص را بررسی کنید.',sorted(seen_measures))
+                if kind is None:continue
+                metric_index=0 if kind=='volume_kg' else 1
                 labels[kind]=str(metric)
-                for f in ('City','Brand','Market'):
-                    if f in fields and not str(vals.get(fields[f],'')).strip():
-                        raise ValueError(f'شیت {name}: مقدار بعد اجباری {f} در ردیف فروش خالی است.')
-                raw_key=tuple(str(vals.get(i,'')).strip() for i in raw_cols)
-                # Compare all populated source cells, not just categorical keys.
-                # Include non-period columns because distinct records can share
-                # all forecast periods. No raw sales values enter the audit examples.
-                fingerprint=hashlib.sha256(json.dumps(sorted((i,v) for i,v in vals.items() if str(v).strip()),ensure_ascii=False,separators=(',',':')).encode('utf-8')).digest()
-                if fingerprint in row_fingerprints:
-                    raise ValueError(f'شیت {name}: ردیف‌های Excel {row_fingerprints[fingerprint]} و {row_number} کاملاً تکراری هستند؛ جمع خودکار مجاز نیست.')
-                row_fingerprints[fingerprint]=row_number
-                identity=(raw_key,mi)
-                identity_counts[identity]+=1
-                source_sales_rows+=1
-                if identity in seen and len(collision_examples)<20:
-                    collision_examples.append({'row':row_number,'measure':str(metric),'occurrence':identity_counts[identity]})
-                seen.add(identity)
-                out_key=tuple(str(vals.get(i,'')).strip() if i is not None else 'Not specified' for i in projection)
-                projected[raw_key]=out_key
-                market=str(vals.get(fields['Market'],'')).strip() if 'Market' in fields else ''
-                caption=str(vals.get(grain_col,'')).strip() if grain_col is not None else ''
-                scope=(market,caption if caption.casefold() in grain_labels else '')
-                scope_by_key[raw_key]=scope
-                if raw_key not in bykey:bykey[raw_key]=np.zeros((2,len(ordered)))
-                row_values=np.zeros(len(ordered),dtype=float)
+                key=tuple(str(vals.get(fields[dim],'')).strip() if dim in fields and fields[dim] in categories else 'Not specified'
+                          for dim in DIMS)+tuple(str(vals.get(i,'')).strip() for _,i in extras)
+                if not key[0] or not key[2]:continue
+                metric_keys[metric_index].add(key)
+                a=bykey[key][metric_index]
                 for j,col in enumerate(ordered):
                     raw=vals.get(col)
                     try:
                         num=float(raw)
                         if not np.isfinite(num) or num<0:raise ValueError()
-                        row_values[j]=num;valid[j]+=1
+                        a[j]+=num;valid[j]+=1
                     except (TypeError,ValueError):
                         if raw is not None and str(raw).strip() not in ('','-','–','—'):
-                            raise ValueError(f'شیت {name}: مقدار فروش نامعتبر در دوره {months[col]}.')
+                            raise ValueError(f'شیت {sh.attrib["name"]}: مقدار فروش نامعتبر در دوره {months[col]}؛ سلول‌ها باید عدد غیرمنفی یا علامت داده مفقود باشند.')
                         missing[j]+=1
-                bykey[raw_key][mi]+=row_values
-                raw_totals[scope][mi]+=row_values
-            for kind,requested in manual_measures.items():
-                if str(requested).strip() and normalized(labels.get(kind))!=normalized(requested):
-                    raise prompt('نام صریح شاخص انتخاب‌شده در جدول فروش یافت نشد.',sorted(seen_measures))
-            if not bykey:
-                raise prompt('هیچ ردیف حجم و مبلغ قابل تشخیص نیست.',sorted(seen_measures))
-            if any((k,0) not in seen or (k,1) not in seen for k in bykey):
-                raise prompt('ردیف‌های حجم و مبلغ در هویت کامل منبع جفت نیستند.',sorted(seen_measures))
-            if any((valid>0)&(missing>0)):
-                bad=[date for date,v,m in zip(dates,valid,missing) if v and m]
-                raise ValueError(f'شیت {name}: بخشی از سلول‌های فروش دوره‌های {", ".join(bad)} خالی یا مفقود است؛ داده مفقود صفر نیست.')
-            keep=np.flatnonzero(valid>0)
-            if not len(keep):
-                raise ValueError(f'شیت {name}: هیچ دوره فروش با مقدار عددی موجود نیست.')
-            unavailable=[date for date,v in zip(dates,valid) if not v]
-            kept_dates=[dates[j] for j in keep]
-            # Build independent source totals before projecting selected dimensions.
-            source_groups={}
-            for scope in raw_totals:
-                totals=raw_totals[scope][:,keep]
-                if not np.isfinite(totals).all():raise ValueError(f'شیت {name}: مجموع فروش خارج از محدوده عددی است.')
-                source_groups[scope]=totals
-            group_keys=defaultdict(list)
-            for key,scope in scope_by_key.items():group_keys[scope].append(key)
-            for scope,keys in group_keys.items():
-                keys.sort()
-                if not np.allclose(sum((bykey[k][:,keep] for k in keys),np.zeros_like(source_groups[scope])),
-                                   source_groups[scope],rtol=1e-10,atol=0):
-                    raise ValueError(f'شیت {name}: مجموع ردیف‌ها با مجموع منبع تطابق ندارد.')
-                sheets.append({'name':name,'scope':scope,'dates':kept_dates,'keys':keys,
-                               'values':np.stack([bykey[k][:,keep] for k in keys]),
-                               'projected':[projected[k] for k in keys],'source_totals':source_groups[scope],
-                               'unavailable_periods':unavailable})
-            sheet_audits.append({'sheet':name,'source_series':len(bykey),'source_sales_rows':source_sales_rows,
-                                 'aggregated_distinct_rows':source_sales_rows-len(seen),
-                                 'multirow_measure_identities':sum(c>1 for c in identity_counts.values()),
-                                 'aggregation_examples':collision_examples,
-                                 'excluded_measures':dict(excluded),'ignored_columns':ignored,
-                                 'unavailable_periods':unavailable,'accepted_periods':kept_dates,
-                                 'excluded_dimensions':[str(head[i]) for i in before if i not in categories and i!=fields.get('Market')],
-                                 'source_totals':[{'market':s[0],'grain':s[1],'periods':kept_dates,
-                                                  'volume':v[0].tolist(),'value':v[1].tolist()}
-                                                  for s,v in source_groups.items()]})
+            if not metric_keys[0] and not metric_keys[1]:
+                if pending_prompt is None:
+                    pending_prompt=mapping_prompt(sh.attrib['name'],head,fields,sorted(seen_measures),
+                                                  categories,months)
+                continue
+            if metric_keys[0]!=metric_keys[1]:
+                prompt=mapping_prompt(sh.attrib['name'],head,fields,sorted(seen_measures),categories,months)
+                prompt['message']=f'شیت {sh.attrib["name"]}: ردیف‌های حجم و مبلغ برای ترکیب‌های یکسان جفت نیستند؛ نام شاخص‌ها و ستون‌های دسته‌بندی را بررسی کنید.'
+                raise SchemaError(prompt)
+            partial=[months[ordered[j]] for j in range(len(ordered)) if valid[j]>0 and missing[j]>0]
+            if partial:raise ValueError(f'شیت {sh.attrib["name"]}: در دوره‌های {", ".join(partial)} بخشی از سلول‌های فروش خالی یا مفقود است؛ داده مفقود صفر نیست. ردیف‌های حجم و مبلغ این دوره‌ها را در فایل مبدأ تکمیل کنید.')
+            keep=[j for j in range(len(ordered)) if valid[j]>0]
+            if not keep:
+                diagnostics.append(f'شیت {sh.attrib["name"]}: هیچ دوره فروش با مقدار عددی موجود نیست؛ داده مفقود یا نامعتبر است.')
+                continue
+            for kind,label in labels.items():
+                unit=metric_unit(kind,label,manual_units.get(kind))
+                if kind in units and units[kind]!=unit:
+                    raise ValueError(f'واحد شاخص {kind} بین شیت‌ها فرق دارد؛ آن‌ها را بدون تبدیل نمی‌توان ترکیب کرد.')
+                units[kind]=unit
+            dates=[months[ordered[j]] for j in keep]
             if preview is None:
-                preview=mapping_prompt(name,head,fields,sorted(seen_measures),categories,months)
-                preview.update(mapping_required=False,periodicity=periodicity,shown_dimensions=shown)
+                preview=mapping_prompt(sh.attrib['name'],head,fields,sorted(seen_measures),
+                                       categories,months)
+                preview['mapping_required']=False
+                preview['periodicity']=periodicity
+            sheets.append((dates,{k:v[:,keep] for k,v in bykey.items()},
+                           sh.attrib['name'],[normalized(name) for name,_ in extras]))
     if not sheets:
-        raise ValueError('هیچ شیت فروش با دوره‌های انتخاب‌شده پیدا نشد.')
-    dates=sorted({date for sheet in sheets for date in sheet['dates']})
+        if pending_prompt:raise SchemaError(pending_prompt)
+        if diagnostics:raise ValueError(' '.join(diagnostics))
+        raise ValueError('هیچ شیت فروش با دوره‌های انتخاب‌شده پیدا نشد. نوع دوره (ماهانه/دوماهه)، سرتیترها و ردیف‌های حجم و مبلغ را بررسی کنید.')
+    # Latest report sheet is authoritative for overlapping monthly columns.
+    sheets.sort(key=lambda s:max(s[0]))
+    extra_ids=sorted(dimension_labels)
+    dims=DIMS+[dimension_labels[k] for k in extra_ids]
+    normalized_sheets=[]
+    for dates,series,sheet_name,present_extras in sheets:
+        positions={name:i for i,name in enumerate(present_extras)}
+        aligned={}
+        for key,val in series.items():
+            new_key=key[:len(DIMS)]+tuple(key[len(DIMS)+positions[k]]
+                  if k in positions else 'Not specified' for k in extra_ids)
+            if new_key in aligned:aligned[new_key]+=val
+            else:aligned[new_key]=val.copy()
+        normalized_sheets.append((dates,aligned,sheet_name))
+    sheets=normalized_sheets
+    keys=sorted(set().union(*(set(s[1]) for s in sheets)))
+    dates=sorted(set().union(*(set(s[0]) for s in sheets)))
     if len(dates)<2:raise ValueError('دست‌کم دو دوره فروش کامل برای پیش‌بینی لازم است.')
     periods=pd.PeriodIndex(dates,freq='M')
     if not all(periods[i]+period_months==periods[i+1] for i in range(len(periods)-1)):
         raise ValueError('دوره‌های فروش پیوسته نیستند؛ ستون‌های گمشده یا نوع دوره را بررسی کنید.')
-    # Complementary sheets can contain different rows at the same reporting
-    # grain. Merge at full source identity x period, BEFORE projection.
-    scopes=defaultdict(list)
-    for sheet in sheets:scopes[sheet['scope']].append(sheet)
-    output_keys=sorted({k for sheet in sheets for k in sheet['projected']})
-    out_index={k:i for i,k in enumerate(output_keys)}
-    a=np.zeros((2,len(output_keys),len(dates)),dtype=float)
-    date_index={date:j for j,date in enumerate(dates)}
-    reconciled=[];duplicates=[];projected_owners={}
-    for scope,parts in sorted(scopes.items()):
-        covered={date for part in parts for date in part['dates']}
-        absent=sorted(set(dates)-covered)
-        if absent:
-            raise ValueError(f'پوشش دوره‌ها برای Market/سطح تجمیع {scope} ناقص است: {", ".join(absent)}؛ نبود داده صفر نیست.')
-        projection={}
-        for part in parts:
-            for key,target in zip(part['keys'],part['projected']):
-                if key in projection and projection[key]!=target:
-                    raise ValueError('نگاشت هویت یکسان بین شیت‌ها ناسازگار است.')
-                projection[key]=target
-        source_keys=sorted(projection)
-        raw_index={key:i for i,key in enumerate(source_keys)}
-        n=len(source_keys)
-        idx=np.array([out_index[projection[k]] for k in source_keys],dtype=int)
-        unique=np.unique(idx)
-        for i in unique:
-            if i in projected_owners and projected_owners[i]!=scope:
-                raise ValueError('نگاشت ابعاد باعث ترکیب سطوح Market/Element Caption شده است.')
-            projected_owners[i]=scope
-        merged=np.zeros((n,2,len(dates)),dtype=float)
-        # Owner index distinguishes explicitly recorded zero from absent rows.
-        owner=np.full((n,len(dates)),-1,dtype=np.int32)
-        expected=np.zeros((2,len(dates)))
-        source_rows=np.zeros((2,len(dates)))
-        duplicate_totals=np.zeros((2,len(dates)))
-        part_indices=[]
-        for p,part in enumerate(parts):
-            rows=np.array([raw_index[k] for k in part['keys']],dtype=int)
-            part_indices.append(rows)
-            for k,date in enumerate(part['dates']):
-                j=date_index[date]
-                values=part['values'][:,:,k]
-                previous=owner[rows,j]
-                repeated=previous>=0
-                fresh=~repeated
-                source_rows[:,j]+=part['source_totals'][:,k]
-                if repeated.any():
-                    overlap_rows=rows[repeated]
-                    differs=np.any(merged[overlap_rows,:,j]!=values[repeated],axis=1)
-                    if differs.any():
-                        old=parts[int(previous[repeated][np.flatnonzero(differs)[0]])]['name']
-                        raise ValueError(f'شیت‌های {old} و {part["name"]}: داده متعارض برای یک هویت فروش در دوره مشترک {date}؛ منبع معتبر را مشخص کنید.')
-                    duplicate_totals[:,j]+=values[repeated].sum(axis=0)
-                    for prior in np.unique(previous[repeated]):
-                        count=int(np.sum(previous==prior))
-                        duplicates.append({'period':date,'market':scope[0],'grain':scope[1],
-                                           'retained_sheet':parts[int(prior)]['name'],
-                                           'duplicate_sheet':part['name'],'series_count':count})
-                merged[rows[fresh],:,j]=values[fresh]
-                owner[rows[fresh],j]=p
-                expected[:,j]+=values[fresh].sum(axis=0)
-        # A genuinely missing cell/column is not a suppressed SKU. A completely
-        # unavailable source period can only be accepted within the final
-        # calendar if every affected identity is supplied by another sheet.
-        for part,rows in zip(parts,part_indices):
-            for date in part['unavailable_periods']:
-                if date in date_index and np.any(owner[rows,date_index[date]]<0):
-                    raise ValueError(f'شیت {part["name"]}: داده صریحاً مفقود در دوره {date}؛ نبود مقدار را نمی‌توان صفر فرض کرد.')
-        inferred=(owner<0).sum(axis=0)
-        if not np.allclose(source_rows,expected+duplicate_totals,rtol=1e-10,atol=0):
-            raise ValueError('مجموع خام شیت‌ها با مجموع پذیرفته‌شده و تکرارهای حذف‌شده سازگار نیست.')
-        for j in range(len(dates)):
-            np.add.at(a[0,:,j],idx,merged[:,0,j])
-            np.add.at(a[1,:,j],idx,merged[:,1,j])
-        actual=a[:,unique,:].sum(axis=1)
-        if not np.isfinite(actual).all() or not np.allclose(actual,expected,rtol=1e-10,atol=0):
-            raise ValueError('مجموع فروش Import با مجموع معتبر Master در Market/سطح تجمیع تطابق ندارد.')
-        reconciled.append({'market':scope[0],'grain':scope[1],'periods':dates,
-                           'source_series':n,'imported_series':len(unique),
-                           'raw_sheet_volume':source_rows[0].tolist(),'raw_sheet_value':source_rows[1].tolist(),
-                           'duplicate_volume':duplicate_totals[0].tolist(),'duplicate_value':duplicate_totals[1].tolist(),
-                           'source_volume':expected[0].tolist(),'source_value':expected[1].tolist(),
-                           'imported_volume':actual[0].tolist(),'imported_value':actual[1].tolist(),
-                           'inferred_zero_series_by_period':inferred.tolist(),
-                           'inferred_zero_series_periods':int(inferred.sum()),
-                           'max_absolute_difference':np.max(abs(expected-actual),axis=1).tolist()})
-    preview['integrity']={'status':'passed','policy':'complementary_sheets_v2','sheets':sheet_audits,
-                          'absent_identity_policy':'assume_zero_in_covered_scope_period',
-                          'inferred_zero_series_periods':sum(r['inferred_zero_series_periods'] for r in reconciled),
-                          'skipped_sheets':skipped,'identical_overlaps':duplicates,
-                          'reconciliation':reconciled,'unit_labels':dict(units)}
-    result=Dataset(np.array(output_keys,dtype=str),a[0],a[1],dates,Path(path).name,
-                   units['volume_kg'],units['value_1000_toman'],output_dims,preview,periodicity)
-    # Validate ambiguity even before the user attempts a forecast.
-    result.report_grain_levels()
-    return result
+    a=np.zeros((2,len(keys),len(dates)),dtype=float)
+    index={k:i for i,k in enumerate(keys)};di={d:i for i,d in enumerate(dates)}
+    for months,series,_ in sheets:
+        jj=[di[d] for d in months]
+        # Replace whole sheet-month (including groups that disappeared) rather
+        # than combining overlapping report snapshots.
+        a[:,:,jj]=0
+        for key,val in series.items():a[:,index[key],jj]=val
+    if preview is not None:
+        preview['shown_dimensions']=[d for d in dims if d in shown_dimensions or d not in DIMS]
+    return Dataset(np.array(keys,dtype=str),a[0],a[1],dates,Path(path).name,
+                   units['volume_kg'],units['value_1000_toman'],dims,preview,periodicity)
 
 @dataclass
 class Dataset:
@@ -473,7 +279,7 @@ class Dataset:
         with path.open('rb') as f:
             for chunk in iter(lambda:f.read(4*1024*1024),b''):digest.update(chunk)
         signature=hashlib.sha256(json.dumps(mapping or {},sort_keys=True,ensure_ascii=False).encode('utf-8')).hexdigest()[:12]
-        out=CACHE/('v8_'+digest.hexdigest()+'_'+signature+'.npz')
+        out=CACHE/('v5_'+digest.hexdigest()+'_'+signature+'.npz')
         if out.exists():
             with np.load(out) as z:
                 schema=json.loads(str(z['schema_json'])) if 'schema_json' in z.files else None
@@ -582,7 +388,7 @@ def predict(dataset,request):
     else:window=int(window)
     if window<2 or window>origin+1:raise ValueError('طول تاریخچه معتبر نیست.')
     filters=request.get('filters',{})
-    dataset=dataset.for_market(filters.get('Market')).for_grain(filters.get('Element Caption') or filters.get('ElementCaption'))
+    dataset=dataset.for_market(filters.get('Market'))
     y=dataset.metric(metric)
     mask=dataset.mask(filters)
     if not mask.any():raise ValueError('برای ترکیب انتخاب‌شده هیچ ردیفی در مستر وجود ندارد.')

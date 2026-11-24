@@ -84,7 +84,7 @@ def resolve_fields(head,manual=None):
     # High confidence typo correction, only when unique and substantially better
     # than the second closest field. Never take a weak Brand/SubBrand guess.
     for field in FIELDS:
-        if field in result or str(manual.get(field,'')).strip() not in ('','*'):continue
+        if field in result:continue
         candidates=[]
         for label,idx in byname.items():
             if idx in used:continue
@@ -129,9 +129,7 @@ def metric_kind(value,manual=None):
     if any(x in s for x in ['share','percent','درصد','سهم']) or '%' in raw:return None
     sales=('sales' in s or 'فروش' in s or 'turnover' in s)
     if not sales:return None
-    if any(x in s for x in ['volume','quantity','qty','kilogram','kg','liter','litre','unit','count','حجم','مقدار','تعداد']):
-        if not any(x in s for x in ['value','amount','revenue','tooman','toman','rial','ارزش','مبلغ','ریال','تومان']):return 'volume_kg'
-        return None
+    if any(x in s for x in ['volume','quantity','qty','kilogram','kg','liter','litre','unit','count','حجم','مقدار','تعداد']):return 'volume_kg'
     if any(x in s for x in ['value','amount','revenue','tooman','toman','rial','ارزش','مبلغ','ریال','تومان']):return 'value_1000_toman'
     return None
 
@@ -139,18 +137,15 @@ def metric_unit(kind,label,override=None):
     if override and str(override).strip():return str(override).strip()
     s=normalized(label)
     if kind=='volume_kg':
-        if any(x in s for x in ['1000000kg','millionkg','میلیونکیلوگرم']):return 'میلیون کیلوگرم'
-        if any(x in s for x in ['1000kg','thousandkg','هزارکیلوگرم']):return 'هزار کیلوگرم'
         if any(x in s for x in ['kilogram','kg','کیلوگرم']):return 'kg'
-        if any(x in s for x in ['milliliter','millilitre','میلیلیتر']) or re.search(r'\(\s*ml\s*\)',str(label),re.I):return 'میلی‌لیتر'
-        if re.search(r'(?<![a-z])(?:gr(?:am|ams)?|g)(?![a-z])',str(label),re.I) or 'گرم' in s:return 'گرم'
+        if re.search(r'(?<![a-z])gr(?:am|ams)?(?![a-z])',str(label),re.I) or 'گرم' in s:return 'گرم'
         if any(x in s for x in ['liter','litre','لیتر']) or re.search(r'\(\s*(l|lit|lt)\s*\)',str(label),re.I):return 'لیتر'
         if any(x in s for x in ['unit','count','تعداد']):return 'عدد'
         return 'واحد حجم فایل'
-    if any(x in s for x in ['1000000tooman','1000000toman','milliontooman','milliontoman','میلیونتومان']):return 'میلیون تومان'
-    if any(x in s for x in ['1000tooman','1000toman','thousandtooman','thousandtoman','هزارتومان']):return 'هزار تومان'
-    if any(x in s for x in ['1000000rial','millionrial','میلیونریال']):return 'میلیون ریال'
-    if any(x in s for x in ['1000rial','thousandrial','هزارریال']):return 'هزار ریال'
+    if any(x in s for x in ['1000tooman','1000toman','هزارتومان']):return 'هزار تومان'
+    if any(x in s for x in ['milliontooman','میلیونتومان']):return 'میلیون تومان'
+    if any(x in s for x in ['1000rial','هزارریال']):return 'هزار ریال'
+    if any(x in s for x in ['millionrial','میلیونریال']):return 'میلیون ریال'
     if any(x in s for x in ['tooman','toman','تومان']):return 'تومان'
     if any(x in s for x in ['rial','ریال']):return 'ریال'
     return 'واحد مبلغ فایل'
