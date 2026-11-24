@@ -11,9 +11,9 @@ import argparse
 import csv
 from pathlib import Path
 from app_core import Dataset
-from auto_engine import dataset_policy, candidates
+from auto_engine import dataset_policy, candidates, guarded_money
 from category_selection import forecast_with_recipes
-from benchmark_levels import compare_levels
+from benchmark_levels import compare_levels, error_metrics
 
 
 def report(dataset, metric, output, detailed_output=None):
@@ -25,16 +25,26 @@ def report(dataset, metric, output, detailed_output=None):
     records=[]
     detailed=[]
     held=None
+    guard_prediction=None
+    guard_info=None
     holdout_index=dataset.months.index(origin) if origin is not None else None
     if holdout_index is not None:
         # This uses the SAME historical holdout but never reselects/tunes recipes.
         held=candidates(dataset,metric,holdout_index)
+        if metric=='value_1000_toman':
+            # The live Value path may override ALL three policy recipes on a
+            # price shift. Report its actual cutoff-safe rule separately.
+            # It is not a fourth competitor selected using holdout targets.
+            guard_prediction,guard_info=guarded_money(dataset,holdout_index)
     for horizon in ('1','2','3'):
         stats=audit.get('horizons',{}).get(horizon)
         if stats:
             row={'metric':metric,'market':market,
                  'periodicity':dataset.periodicity,'horizon':horizon,
                  'audit_type':'untouched_holdout','origin':origin,
+                 'audit_scope':'locked_recipes_common_selection_origins',
+                 'price_guard_active_at_holdout':(
+                     bool(guard_info['active']) if guard_info is not None else None),
                  'selection_origins':','.join(policy['_selection_origins']),
                  'global_recipe':policy[horizon]['name'],
                  'global_wape':stats['global']['wape'],
@@ -54,6 +64,13 @@ def report(dataset, metric, output, detailed_output=None):
                  'groups_unchanged':stats['groups_unchanged'],
                  'series_using_override':stats['series_using_override'],
                  'selection_only':False}
+            if guard_prediction is not None:
+                actual=dataset.metric(metric)[:,holdout_index+int(horizon)]
+                guard_stats=error_metrics(actual,guard_prediction[:,int(horizon)-1])
+                row.update(price_guard_wape=guard_stats['wape'],
+                           price_guard_mae=guard_stats['mae'],
+                           price_guard_bias=guard_stats['bias'],
+                           price_guard_absolute_error=guard_stats['absolute_error'])
             entry=policy[horizon]
             legacy=policy['_legacy_global'][horizon]
             needed={name for recipe in (entry,legacy)
@@ -79,7 +96,8 @@ def report(dataset, metric, output, detailed_output=None):
         else:
             row={'metric':metric,'market':market,'periodicity':dataset.periodicity,
                  'horizon':horizon,'audit_type':'no_independent_holdout',
-                 'origin':'','selection_origins':','.join(policy['_selection_origins']),
+                 'origin':'','audit_scope':'selection_only',
+                 'selection_origins':','.join(policy['_selection_origins']),
                  'global_recipe':policy[horizon]['name'],'selection_only':True}
         records.append(row)
     fields=['metric','market','periodicity','horizon','audit_type','origin',
@@ -89,7 +107,9 @@ def report(dataset, metric, output, detailed_output=None):
             'global_mae','hierarchical_mae','global_bias','hierarchical_bias',
             'relative_absolute_error_reduction','relative_reduction_vs_legacy',
             'groups_improved','groups_deteriorated',
-            'groups_unchanged','series_using_override','selection_only']
+            'groups_unchanged','series_using_override','selection_only',
+            'audit_scope','price_guard_active_at_holdout','price_guard_wape',
+            'price_guard_mae','price_guard_bias','price_guard_absolute_error']
     output=Path(output)
     output.parent.mkdir(parents=True,exist_ok=True)
     with output.open('w',newline='',encoding='utf-8-sig') as stream:
