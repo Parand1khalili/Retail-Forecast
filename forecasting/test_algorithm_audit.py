@@ -109,5 +109,43 @@ class AlgorithmAuditTests(unittest.TestCase):
             self.assertEqual(b['raw'][0,0],22.)
 
 
+    def test_price_override_is_scored_separately_without_future_trigger(self):
+        from evaluate_hierarchy import report
+        import evaluate_hierarchy
+        import csv
+
+        def frozen_candidates(d,metric,cutoff):
+            return {'base|Last month|2':np.full((len(d.meta),3),200.)}
+
+        def quantity_model(d,metric,cutoff,window,predict_only=None):
+            return {'raw':np.full((len(d.meta),3),20.)}
+
+        for trigger in (True,False):
+            with self.subTest(price_shift_already_observed=trigger):
+                d=self.panel()
+                # Holdout origin 32. A price jump at 33 is not yet observable.
+                d.value[:,32 if trigger else 33:]=400.
+                with tempfile.TemporaryDirectory() as folder, \
+                     patch.object(auto_engine,'OUT',Path(folder)), \
+                     patch.object(auto_engine,'candidates',side_effect=frozen_candidates), \
+                     patch.object(evaluate_hierarchy,'candidates',side_effect=frozen_candidates), \
+                     patch.object(auto_engine,'fit_models',side_effect=quantity_model):
+                    destination=Path(folder)/'audit.csv'
+                    rows=report(d,'value_1000_toman',destination)
+                    with destination.open(encoding='utf-8-sig',newline='') as stream:
+                        saved=list(csv.DictReader(stream))
+                self.assertEqual(len(rows),3)
+                for row,stored in zip(rows,saved):
+                    self.assertEqual(row['audit_scope'],'locked_recipes_common_selection_origins')
+                    self.assertEqual(row['price_guard_active_at_holdout'],trigger)
+                    self.assertEqual(stored['price_guard_active_at_holdout'],str(trigger))
+                    self.assertAlmostEqual(row['hierarchical_wape'],.5)
+                    if trigger:
+                        self.assertEqual(row['price_guard_wape'],0.)
+                    else:
+                        self.assertNotIn('price_guard_wape',row)
+                        self.assertEqual(stored['price_guard_wape'],'')
+
+
 if __name__=='__main__':
     unittest.main()
