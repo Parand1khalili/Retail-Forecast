@@ -23,11 +23,32 @@ OUT.mkdir(parents=True,exist_ok=True)
 PARAMS=dict(iterations=180,depth=5,learning_rate=.06,l2_leaf_reg=10,
             loss_function='RMSE',random_seed=42,thread_count=4,verbose=False,
             allow_writing_files=False,has_time=True,one_hot_max_size=32)
-VERSION='global-v3-frequencies-and-market-levels'
+VERSION='global-v4-calendar-aware-cache'
 SELECTION_VERSION='robust-price-volume-v3'
-POLICY_VERSION='robust-champion-v6-rolling-audit'
+POLICY_VERSION='robust-champion-v7-scale-invariant-stable-category'
 
 def emit(*args):print(*args,flush=True)
+
+
+def data_identity(d,start,cutoff):
+    """Identity of the exact available panel, including its calendar and units.
+
+    The model learns target month, weekday counts/days and seasonal calendar.
+    Identical numeric observations shifted to another month are NOT the same
+    learning problem. Object-array pointer bytes are not a stable identity.
+    """
+    meta=np.asarray(d.meta,dtype=str)
+    header={'dates':list(d.months[start:cutoff+1]),'periodicity':d.periodicity,
+            'dimensions':d.all_dimensions(),'meta_shape':meta.shape,
+            'meta_dtype':str(meta.dtype),'volume_unit':d.volume_unit,
+            'value_unit':d.value_unit}
+    digest=hashlib.sha256(json.dumps(header,sort_keys=True,ensure_ascii=False).encode('utf-8'))
+    digest.update(meta.tobytes())
+    for array in (d.volume[:,start:cutoff+1],d.value[:,start:cutoff+1]):
+        panel=np.ascontiguousarray(array,dtype=np.float64)
+        digest.update(str(panel.shape).encode('ascii'))
+        digest.update(panel.tobytes())
+    return digest.digest()
 
 def unit_prices(d):
     p=np.divide(d.value,d.volume,out=np.full_like(d.value,np.nan),where=d.volume>0)
@@ -95,7 +116,7 @@ def fit_models(d,metric,cutoff,window,predict_only=None):
     start=max(0,cutoff-window+1) if isinstance(window,int) else 0
     if cutoff-start+1<18:return {}
     fingerprint=hashlib.sha256(VERSION.encode()+json.dumps(PARAMS,sort_keys=True).encode()+
-        str((metric,start,cutoff,d.periodicity)).encode()+json.dumps(d.all_dimensions()).encode()+d.meta.tobytes()+d.volume[:,start:cutoff+1].tobytes()+d.value[:,start:cutoff+1].tobytes()).hexdigest()[:20]
+        str((metric,start,cutoff)).encode()+data_identity(d,start,cutoff)).hexdigest()[:20]
     folder=OUT/'cache'/fingerprint;folder.mkdir(parents=True,exist_ok=True)
     cached=folder/'predictions.npz'
     if cached.exists():
@@ -335,8 +356,7 @@ def dataset_policy(d,metric,cutoff,strategy='hierarchical'):
     digest=hashlib.sha256(VERSION.encode()+POLICY_VERSION.encode()+metric.encode()+strategy.encode()+
         json.dumps(configuration['configuration'],sort_keys=True).encode()+
         json.dumps(ChampionGuard().__dict__,sort_keys=True).encode()+
-        d.periodicity.encode()+json.dumps(d.all_dimensions()).encode()+d.meta.tobytes()+
-        d.volume[:,:cutoff+1].tobytes()+d.value[:,:cutoff+1].tobytes()).hexdigest()[:24]
+        data_identity(d,0,cutoff)).hexdigest()[:24]
     cached=OUT/'runtime_policies'/f'{digest}.json';cached.parent.mkdir(exist_ok=True)
     if cached.exists():return json.loads(cached.read_text(encoding='utf-8'))
     origins,holdout=configuration['selection'],configuration['holdout']
