@@ -500,7 +500,8 @@ function renderSchemaPreview(schema){
     const line=document.createElement('div');line.className='schema-caption';
     line.textContent='کنترل صحت Import: تطبیق مجموع Master و پنل در '+audit.reconciliation.length+
       ' سطح بازار/محصول · '+audit.sheets.length+' شیت فروش · '+audit.identical_overlaps.length+
-      ' هم‌پوشانی کاملاً یکسان (بدون دوباره‌شماری).';
+      ' هم‌پوشانی یکسان (بدون دوباره‌شماری).'+
+      (audit.inferred_zero_series_periods?' · هشدار: '+audit.inferred_zero_series_periods+' ترکیب سری/دوره غایب در سطح دارای داده، با فرض فروش صفر وارد شد.':'');
     preview.append(line);
     const details=document.createElement('details');details.className='schema-caption';
     const summary=document.createElement('summary');summary.textContent='جزئیات کنترل داده و موارد خارج از محاسبه';details.append(summary);

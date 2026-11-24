@@ -249,7 +249,8 @@ def parse_master(path,mapping=None):
                     raise ValueError(f'شیت {name}: مجموع ردیف‌ها با مجموع منبع تطابق ندارد.')
                 sheets.append({'name':name,'scope':scope,'dates':kept_dates,'keys':keys,
                                'values':np.stack([bykey[k][:,keep] for k in keys]),
-                               'projected':[projected[k] for k in keys],'source_totals':source_groups[scope]})
+                               'projected':[projected[k] for k in keys],'source_totals':source_groups[scope],
+                               'unavailable_periods':unavailable})
             sheet_audits.append({'sheet':name,'source_series':len(bykey),'source_sales_rows':len(seen),
                                  'excluded_measures':dict(excluded),'ignored_columns':ignored,
                                  'unavailable_periods':unavailable,'accepted_periods':kept_dates,
@@ -267,56 +268,95 @@ def parse_master(path,mapping=None):
     periods=pd.PeriodIndex(dates,freq='M')
     if not all(periods[i]+period_months==periods[i+1] for i in range(len(periods)-1)):
         raise ValueError('دوره‌های فروش پیوسته نیستند؛ ستون‌های گمشده یا نوع دوره را بررسی کنید.')
-    # Each explicit Market/grain scope must be complete across the common calendar.
-    # Identical full-scope overlaps are deduplicated. Conflicting revisions,
-    # partial coverage or missing identities require an explicit source correction.
+    # Complementary sheets can contain different rows at the same reporting
+    # grain. Merge at full source identity x period, BEFORE projection.
     scopes=defaultdict(list)
     for sheet in sheets:scopes[sheet['scope']].append(sheet)
     output_keys=sorted({k for sheet in sheets for k in sheet['projected']})
     out_index={k:i for i,k in enumerate(output_keys)}
     a=np.zeros((2,len(output_keys),len(dates)),dtype=float)
+    date_index={date:j for j,date in enumerate(dates)}
     reconciled=[];duplicates=[];projected_owners={}
     for scope,parts in sorted(scopes.items()):
-        canonical=parts[0]
-        source_keys=canonical['keys']
-        target_keys=canonical['projected']
-        for part in parts:
-            if part['keys']!=source_keys or part['projected']!=target_keys:
-                raise ValueError(f'شیت {part["name"]}: پوشش سری‌ها در Market/سطح تجمیع یکسان نیست؛ نبود ردیف به معنی فروش صفر نیست.')
-        owners={}
-        for part in parts:
-            for j,date in enumerate(part['dates']):
-                if date in owners:
-                    old,k=owners[date]
-                    if not np.array_equal(old['values'][:,:,k],part['values'][:,:,j]):
-                        raise ValueError(f'شیت‌های {old["name"]} و {part["name"]}: داده متعارض در دوره مشترک {date}؛ نسخه معتبر را در Master مشخص کنید.')
-                    duplicates.append({'period':date,'market':scope[0],'grain':scope[1],
-                                       'retained_sheet':old['name'],'duplicate_sheet':part['name']})
-                else:owners[date]=(part,j)
-        absent=sorted(set(dates)-set(owners))
+        covered={date for part in parts for date in part['dates']}
+        absent=sorted(set(dates)-covered)
         if absent:
             raise ValueError(f'پوشش دوره‌ها برای Market/سطح تجمیع {scope} ناقص است: {", ".join(absent)}؛ نبود داده صفر نیست.')
-        idx=np.array([out_index[k] for k in target_keys],dtype=int)
+        projection={}
+        for part in parts:
+            for key,target in zip(part['keys'],part['projected']):
+                if key in projection and projection[key]!=target:
+                    raise ValueError('نگاشت هویت یکسان بین شیت‌ها ناسازگار است.')
+                projection[key]=target
+        source_keys=sorted(projection)
+        raw_index={key:i for i,key in enumerate(source_keys)}
+        n=len(source_keys)
+        idx=np.array([out_index[projection[k]] for k in source_keys],dtype=int)
         unique=np.unique(idx)
         for i in unique:
             if i in projected_owners and projected_owners[i]!=scope:
                 raise ValueError('نگاشت ابعاد باعث ترکیب سطوح Market/Element Caption شده است.')
             projected_owners[i]=scope
+        merged=np.zeros((n,2,len(dates)),dtype=float)
+        # Owner index distinguishes explicitly recorded zero from absent rows.
+        owner=np.full((n,len(dates)),-1,dtype=np.int32)
         expected=np.zeros((2,len(dates)))
-        for j,date in enumerate(dates):
-            part,k=owners[date]
-            expected[:,j]=part['source_totals'][:,k]
-            np.add.at(a[0,:,j],idx,part['values'][:,0,k])
-            np.add.at(a[1,:,j],idx,part['values'][:,1,k])
+        source_rows=np.zeros((2,len(dates)))
+        duplicate_totals=np.zeros((2,len(dates)))
+        part_indices=[]
+        for p,part in enumerate(parts):
+            rows=np.array([raw_index[k] for k in part['keys']],dtype=int)
+            part_indices.append(rows)
+            for k,date in enumerate(part['dates']):
+                j=date_index[date]
+                values=part['values'][:,:,k]
+                previous=owner[rows,j]
+                repeated=previous>=0
+                fresh=~repeated
+                source_rows[:,j]+=part['source_totals'][:,k]
+                if repeated.any():
+                    overlap_rows=rows[repeated]
+                    differs=np.any(merged[overlap_rows,:,j]!=values[repeated],axis=1)
+                    if differs.any():
+                        old=parts[int(previous[repeated][np.flatnonzero(differs)[0]])]['name']
+                        raise ValueError(f'شیت‌های {old} و {part["name"]}: داده متعارض برای یک هویت فروش در دوره مشترک {date}؛ منبع معتبر را مشخص کنید.')
+                    duplicate_totals[:,j]+=values[repeated].sum(axis=0)
+                    for prior in np.unique(previous[repeated]):
+                        count=int(np.sum(previous==prior))
+                        duplicates.append({'period':date,'market':scope[0],'grain':scope[1],
+                                           'retained_sheet':parts[int(prior)]['name'],
+                                           'duplicate_sheet':part['name'],'series_count':count})
+                merged[rows[fresh],:,j]=values[fresh]
+                owner[rows[fresh],j]=p
+                expected[:,j]+=values[fresh].sum(axis=0)
+        # A genuinely missing cell/column is not a suppressed SKU. A completely
+        # unavailable source period can only be accepted within the final
+        # calendar if every affected identity is supplied by another sheet.
+        for part,rows in zip(parts,part_indices):
+            for date in part['unavailable_periods']:
+                if date in date_index and np.any(owner[rows,date_index[date]]<0):
+                    raise ValueError(f'شیت {part["name"]}: داده صریحاً مفقود در دوره {date}؛ نبود مقدار را نمی‌توان صفر فرض کرد.')
+        inferred=(owner<0).sum(axis=0)
+        if not np.allclose(source_rows,expected+duplicate_totals,rtol=1e-10,atol=0):
+            raise ValueError('مجموع خام شیت‌ها با مجموع پذیرفته‌شده و تکرارهای حذف‌شده سازگار نیست.')
+        for j in range(len(dates)):
+            np.add.at(a[0,:,j],idx,merged[:,0,j])
+            np.add.at(a[1,:,j],idx,merged[:,1,j])
         actual=a[:,unique,:].sum(axis=1)
         if not np.isfinite(actual).all() or not np.allclose(actual,expected,rtol=1e-10,atol=0):
             raise ValueError('مجموع فروش Import با مجموع معتبر Master در Market/سطح تجمیع تطابق ندارد.')
         reconciled.append({'market':scope[0],'grain':scope[1],'periods':dates,
-                           'source_series':len(source_keys),'imported_series':len(unique),
+                           'source_series':n,'imported_series':len(unique),
+                           'raw_sheet_volume':source_rows[0].tolist(),'raw_sheet_value':source_rows[1].tolist(),
+                           'duplicate_volume':duplicate_totals[0].tolist(),'duplicate_value':duplicate_totals[1].tolist(),
                            'source_volume':expected[0].tolist(),'source_value':expected[1].tolist(),
                            'imported_volume':actual[0].tolist(),'imported_value':actual[1].tolist(),
+                           'inferred_zero_series_by_period':inferred.tolist(),
+                           'inferred_zero_series_periods':int(inferred.sum()),
                            'max_absolute_difference':np.max(abs(expected-actual),axis=1).tolist()})
-    preview['integrity']={'status':'passed','policy':'strict_v1','sheets':sheet_audits,
+    preview['integrity']={'status':'passed','policy':'complementary_sheets_v2','sheets':sheet_audits,
+                          'absent_identity_policy':'assume_zero_in_covered_scope_period',
+                          'inferred_zero_series_periods':sum(r['inferred_zero_series_periods'] for r in reconciled),
                           'skipped_sheets':skipped,'identical_overlaps':duplicates,
                           'reconciliation':reconciled,'unit_labels':dict(units)}
     result=Dataset(np.array(output_keys,dtype=str),a[0],a[1],dates,Path(path).name,
@@ -415,7 +455,7 @@ class Dataset:
         with path.open('rb') as f:
             for chunk in iter(lambda:f.read(4*1024*1024),b''):digest.update(chunk)
         signature=hashlib.sha256(json.dumps(mapping or {},sort_keys=True,ensure_ascii=False).encode('utf-8')).hexdigest()[:12]
-        out=CACHE/('v6_'+digest.hexdigest()+'_'+signature+'.npz')
+        out=CACHE/('v7_'+digest.hexdigest()+'_'+signature+'.npz')
         if out.exists():
             with np.load(out) as z:
                 schema=json.loads(str(z['schema_json'])) if 'schema_json' in z.files else None

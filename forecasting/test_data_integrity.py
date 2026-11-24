@@ -70,10 +70,56 @@ class IntegrityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'متعارض'):
             self.load({'old':sales(),'new':sales(('2026-02','2026-03'),(99,30),(200,300))})
 
-    def test_missing_series_is_not_zero(self):
+    def test_absent_series_zero_is_explicitly_audited(self):
         first=sales();first+=sales(brand='B')[1:]
-        with self.assertRaisesRegex(ValueError,'پوشش سری'):
-            self.load({'old':first,'new':sales(('2026-03','2026-04'))})
+        d=self.load({'old':first,'new':sales(('2026-03','2026-04'))})
+        np.testing.assert_array_equal(d.volume,[[10,20,10,20],[10,20,0,0]])
+        r=d.schema['integrity']['reconciliation'][0]
+        self.assertEqual(r['source_volume'],[20,40,10,20])
+        self.assertEqual(r['inferred_zero_series_by_period'],[0,0,1,1])
+        self.assertEqual(d.schema['integrity']['inferred_zero_series_periods'],2)
+
+    def test_complementary_same_period_sheets_preserve_distinct_rows(self):
+        d=self.load({'A':sales(), 'B':sales(brand='B',volumes=(3,7),values=(30,70))})
+        np.testing.assert_array_equal(d.volume,[[10,20],[3,7]])
+        np.testing.assert_array_equal(d.value,[[100,200],[30,70]])
+        r=d.schema['integrity']['reconciliation'][0]
+        self.assertEqual(r['source_volume'],[13,27])
+        self.assertEqual(r['inferred_zero_series_periods'],0)
+        self.assertEqual(d.schema['integrity']['identical_overlaps'],[])
+
+    def test_partial_row_overlap_deduplicates_before_projection(self):
+        first=sales();first+=sales(size='Large',volumes=(2,3),values=(20,30))[1:]
+        second=sales();second+=sales(size='Medium',volumes=(4,5),values=(40,50))[1:]
+        d=self.load({'one':first,'two':second},{'dimension_columns':['City','Brand','Element Caption']})
+        np.testing.assert_array_equal(d.volume,[[16,28]])
+        r=d.schema['integrity']['reconciliation'][0]
+        self.assertEqual(r['raw_sheet_volume'],[26,48])
+        self.assertEqual(r['duplicate_volume'],[10,20])
+        self.assertEqual(r['source_volume'],[16,28])
+        self.assertEqual(sum(x['series_count'] for x in d.schema['integrity']['identical_overlaps']),2)
+
+    def test_partial_row_overlap_conflict_is_not_overwritten(self):
+        first=sales();first+=sales(brand='B')[1:]
+        second=sales(volumes=(99,20));second+=sales(brand='C')[1:]
+        with self.assertRaisesRegex(ValueError,'متعارض'):
+            self.load({'old':first,'new':second})
+
+    def test_explicit_missing_period_is_not_inferred_zero(self):
+        first=sales(('2026-01','2026-02','2026-03'),(None,20,30),(None,200,300))
+        second=sales(('2026-01','2026-02','2026-03'),(1,2,3),(10,20,30),brand='B')
+        with self.assertRaisesRegex(ValueError,'مفقود'):
+            self.load({'one':first,'two':second})
+        # Another sheet may supply the exact missing identity and period.
+        third=sales(('2026-01','2026-02'),(10,20),(100,200))
+        d=self.load({'one':first,'two':second,'three':third})
+        np.testing.assert_array_equal(d.volume,[[10,20,30],[1,2,3]])
+        self.assertEqual(d.schema['integrity']['inferred_zero_series_periods'],0)
+
+    def test_new_series_zero_before_first_observation(self):
+        d=self.load({'early':sales(), 'late':sales(('2026-03','2026-04'),brand='B')})
+        np.testing.assert_array_equal(d.volume,[[10,20,0,0],[0,0,10,20]])
+        self.assertEqual(d.schema['integrity']['inferred_zero_series_periods'],4)
 
     def test_disjoint_markets_separated_and_incomplete_scope_rejected(self):
         d=self.load({'city':sales(),'national':sales(market='All',volumes=(100,200))})
