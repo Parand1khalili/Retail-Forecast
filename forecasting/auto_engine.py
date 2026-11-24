@@ -23,9 +23,9 @@ OUT.mkdir(parents=True,exist_ok=True)
 PARAMS=dict(iterations=180,depth=5,learning_rate=.06,l2_leaf_reg=10,
             loss_function='RMSE',random_seed=42,thread_count=4,verbose=False,
             allow_writing_files=False,has_time=True,one_hot_max_size=32)
-VERSION='global-v5-parent-ratios-scale'
+VERSION='global-v6-scaled-log-residual'
 SELECTION_VERSION='robust-price-volume-v3'
-POLICY_VERSION='robust-champion-v8-parent-ratios-scale'
+POLICY_VERSION='robust-champion-v9-scaled-log-residual'
 
 def emit(*args):print(*args,flush=True)
 
@@ -112,6 +112,28 @@ class Features(FeatureBuilder):
         x['physical_volume_mean6']=self.volume[:,t-5:t+1].mean(1)
         return x,scale,ever
 
+def log_reference_scale(history,scale):
+    """Positive sales reference in native units, using only the origin prefix."""
+    # Recent averages dilute intermittent sales. The latest positive sale
+    # prevents the log clip from blocking an ordinary return after zero sales.
+    # Never-observed series retain zero and are excluded from fitting.
+    last_positive_offset=np.argmax(history[:,::-1]>0,axis=1)
+    last_positive=history[np.arange(len(history)),history.shape[1]-1-last_positive_offset]
+    return np.maximum(scale,last_positive)
+
+
+def log_residual_target(actual,latest,reference):
+    """Dimensionless shifted log ratio; reference must be positive for fit rows."""
+    return np.log1p(actual/reference)-np.log1p(latest/reference)
+
+
+def log_residual_prediction(latest,reference,delta):
+    """Invert the SAME origin-specific shift; retain the existing log-space clip."""
+    # Equivalent to reference * expm1(log1p(latest/reference) + clipped_delta).
+    # This form is stable near delta=0 and needs no division for all-zero series.
+    return np.maximum(latest+(latest+reference)*np.expm1(np.clip(delta,-1.5,1.5)),0)
+
+
 def fit_models(d,metric,cutoff,window,predict_only=None):
     start=max(0,cutoff-window+1) if isinstance(window,int) else 0
     if cutoff-start+1<18:return {}
@@ -122,24 +144,29 @@ def fit_models(d,metric,cutoff,window,predict_only=None):
     if cached.exists():
         with np.load(cached) as z:return {k:z[k] for k in z.files}
     b=Features(d,metric,start,cutoff);last=b.y.shape[1]-1
-    frames=[];truths=[];latest=[];scales=[];pt=[];pl=[];priceweights=[]
+    frames=[];truths=[];latest=[];scales=[];log_scales=[];pt=[];pl=[];priceweights=[]
     for t in range(max(5,12//d.period_months-1),last):
         for h in [1,2,3]:
             if t+h>last:continue
             x,s,ever=b.features(t,h)
             if not ever.any():continue
+            # Reference depends on origin, not horizon or future actuals.
+            if h==1:log_scale=log_reference_scale(b.y[:,:t+1],s)
             frames.append(x.loc[ever]);truths.append(b.y[ever,t+h]);latest.append(b.y[ever,t]);scales.append(s[ever])
+            log_scales.append(log_scale[ever])
             pt.append(b.price[ever,t+h]);pl.append(b.price[ever,t]);priceweights.append(b.volume[ever,t])
     if not frames:return {}
     X=pd.concat(frames,ignore_index=True);y=np.concatenate(truths);ly=np.concatenate(latest);scale=np.concatenate(scales)
+    log_scale=np.concatenate(log_scales)
     ptarget=np.concatenate(pt);plast=np.concatenate(pl);pw=np.concatenate(priceweights)
     outputs={};predframes=[b.features(last,h) for h in [1,2,3]]
+    prediction_log_scale=log_reference_scale(b.y,predframes[0][1])
     for mode in ['raw','scaled','log','price']:
         if mode=='price' and metric!='volume_kg':continue
         begun=time.monotonic();valid=np.ones(len(y),dtype=bool);weights=None
         if mode=='raw':response=y-ly
         elif mode=='scaled':response=(y-ly)/scale;weights=np.sqrt(scale)
-        elif mode=='log':response=np.log1p(y)-np.log1p(ly);weights=np.sqrt(scale)
+        elif mode=='log':response=log_residual_target(y,ly,log_scale);weights=np.sqrt(scale)
         else:
             valid=np.isfinite(ptarget)&np.isfinite(plast)&(ptarget>0)&(plast>0)&(pw>0)
             response=np.log(np.maximum(ptarget,1e-8)/np.maximum(plast,1e-8));weights=np.sqrt(np.maximum(pw,1))
@@ -154,7 +181,7 @@ def fit_models(d,metric,cutoff,window,predict_only=None):
             delta=model.predict(xp)
             if mode=='raw':pred=b.y[:,last]+delta
             elif mode=='scaled':pred=b.y[:,last]+delta*ps
-            elif mode=='log':pred=np.expm1(np.log1p(b.y[:,last])+np.clip(delta,-1.5,1.5))
+            elif mode=='log':pred=log_residual_prediction(b.y[:,last],prediction_log_scale,delta)
             else:
                 price=pd.DataFrame(b.price).ffill(axis=1).fillna(0).to_numpy()[:,-1]
                 pred=price*np.exp(np.clip(delta,-.5,.7))
@@ -163,7 +190,9 @@ def fit_models(d,metric,cutoff,window,predict_only=None):
         emit('FIT',metric,d.months[cutoff],'history',window,mode,'rows',len(X),'sec',round(time.monotonic()-begun,1))
     np.savez_compressed(cached,**outputs)
     (folder/'audit.json').write_text(json.dumps({'metric':metric,'input_start':d.months[start],'input_end':d.months[cutoff],
-        'max_training_target':d.months[cutoff],'rows':len(X),'parameters':PARAMS},indent=2),encoding='utf-8')
+        'max_training_target':d.months[cutoff],'rows':len(X),'parameters':PARAMS,
+        'log_residual':{'reference':'max(scale,last_positive_sale)','clip':[-1.5,1.5],
+                        'weight':'sqrt(scale)','bias_adjustment':False}},indent=2),encoding='utf-8')
     return outputs
 
 def base_candidates(d,metric,cutoff):
