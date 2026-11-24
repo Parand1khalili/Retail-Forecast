@@ -167,6 +167,22 @@ class ProductionRegimeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'unavailable'):
                 engine.forecast_component(d,'value_1000_toman',22,GUARD_ID)
 
+    def test_real_nonconstant_catboost_specialist_composes_volume_and_unit_value(self):
+        d=panel(28)
+        d.volume[:,:]=20.+np.arange(28)[None,:]*.3+np.arange(16)[:,None]*.1
+        d.value[:,:]=d.volume*10.
+        d.value[:,23:]*=1.5
+        params={**engine.PARAMS,'iterations':4,'depth':2,'thread_count':1}
+        with TemporaryDirectory() as temp, \
+             patch.object(engine,'OUT',Path(temp)), \
+             patch.object(engine,'PARAMS',params):
+            raw=engine.fit_models(d,'volume_kg',23,'all')['raw']
+            forecast=engine.forecast_component(d,'value_1000_toman',23,GUARD_ID)
+            expected=15.*(.5*raw+.5*d.volume[:,23,None])
+            np.testing.assert_allclose(forecast,expected,rtol=1e-8)
+            self.assertTrue(np.isfinite(forecast).all())
+            self.assertTrue(list(Path(temp).rglob('raw.cbm')))
+
     def test_future_perturbation_cannot_change_historical_policy_or_forecast(self):
         d=panel()
         for origin in (17,24,32,41):
