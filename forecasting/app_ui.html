@@ -821,7 +821,8 @@ function categorySelectionHtml(r){
       const target=(item.path||[]).join(' / ')||'Global Market';
       const ev=item.group_selection_metrics||{}, group=ev.group||{};
       const evidence=(typeof group.wape==='number'?' · WAPE گروه در انتخاب: '+percent(group.wape):'')+
-        (typeof ev.relative_improvement==='number'?' · بهبود نسبت به والد: '+percent(ev.relative_improvement):'');
+        (typeof ev.relative_improvement==='number'?' · بهبود نسبت به مرجع: '+percent(ev.relative_improvement):'')+
+        (item.selection_scope==='matched_shock_events'?' · رخدادهای هم‌جهت':'');
       const source=item.source==='Category'?'Recipe ویژه گروه':
         item.source==='Parent fallback'?'ارث‌بری از گروه والد':'Fallback به Global';
       return '<div class="detail"><strong>'+escapeHtml(target)+'</strong><span>'+
@@ -843,7 +844,7 @@ function categorySelectionHtml(r){
     (h.legacy_global?' · WAPE Global قبلی: '+(h.legacy_global.wape===null?'N/A':percent(h.legacy_global.wape)):'')+
     ' · گروه‌های بهتر/بدتر: '+persian(h.groups_improved)+' / '+persian(h.groups_deteriorated)+
     ' · این مبدأ برای انتخاب Recipe استفاده نشده است.</span></div>':
-    '<div class="detail"><strong>Holdout مستقل</strong><span>به‌دلیل تاریخچه ناکافی، موجود نیست؛ نتایج انتخاب به‌معنای آزمون مستقل نیستند.</span></div>';
+    '<div class="detail"><strong>Holdout مستقل</strong><span>'+(r.calibration?.price_regime?.active?'برای مقایسه اجرای واقعی سیاست جهشی، Model Lab را باز کنید. امتیاز انتخاب، آزمون مستقل نیست.':'به‌دلیل تاریخچه ناکافی یا نبود شرایط لازم، موجود نیست؛ نتایج انتخاب به‌معنای آزمون مستقل نیستند.')+'</span></div>';
   const levelSummary=info.evaluation_summary||{};
   const levelRows=Object.entries(levelSummary).filter(([level])=>level!=='Series').map(([level,x])=>
     '<div class="detail"><strong>Holdout · '+escapeHtml(level)+'</strong><span>'+
