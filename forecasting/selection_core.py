@@ -72,6 +72,10 @@ def candidate_info(name):
     elif family == 'ml' and len(parts) == 3:
         minimum, resource, cache = 18, 'high: Global CatBoost', 'model+prediction fingerprint'
         label = f'CatBoost: {parts[1]} ({parts[2]})'
+    elif name == 'price-guard|robust':
+        minimum, metrics = 18, ('value_1000_toman',)
+        resource, cache = 'high: shared volume CatBoost', 'conditional per-origin predictions'
+        label = 'محافظ ارزش واحد (فقط رخداد جهشی)'
     elif family == 'price-trend' and len(parts) == 4:
         minimum, metrics = 6, ('value_1000_toman',)
         label = f'روند قیمت: {parts[3]} ({parts[1]}/{parts[2]})'
