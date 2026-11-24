@@ -926,6 +926,7 @@ function renderBacktest(result){
   const nested=result.evaluation_type==='nested_walk_forward';
   const completed=rows.filter(item=>item.audit_type==='untouched_holdout'||item.audit_type==='nested_walk_forward');
   const total=completed.length;
+  const singleOrigin=nested&&completed.length&&completed.every(item=>item.origin_count===1);
   const guardRows=completed.filter(item=>item.metric==='value_1000_toman'&&item.price_guard_active_at_holdout===true);
   const guardNote=guardRows.length?
     '<div class="model-lab-intro"><strong>قاعده مستقل جهش ارزش واحد در مبدأ آزمون فعال بود</strong>'+
@@ -975,7 +976,7 @@ function renderBacktest(result){
     '<div class="eyebrow">EMRC · MODEL LAB</div><h2>'+(nested?'Nested Walk-Forward · بازاجرای تاریخی برنامه':'مقایسه تاریخی Recipeها')+'</h2>'+
     '<div class="source">'+escapeHtml(result.source)+' · Market: '+escapeHtml(result.market)+
     ' · '+(result.periodicity==='bimonthly'?'دوماهه':'ماهانه')+'</div></div>'+
-    '<span class="badge">'+(total?'ارزیابی مستقل انجام شد':'Holdout کافی نیست')+'</span></div>'+
+    '<span class="badge">'+(total?(singleOrigin?'فقط یک مبدأ خارج از نمونه':'ارزیابی مستقل انجام شد'):'Holdout کافی نیست')+'</span></div>'+
     '<div class="lab-meta"><span>'+persian(result.series)+' سری</span>'+
     '<span>'+persian(result.periods)+' دوره تاریخی</span>'+
     '<span>'+persian(metrics.length)+' شاخص</span><span>افق‌های H1 / H2 / H3</span></div>'+
@@ -1003,7 +1004,7 @@ function renderBacktest(result){
     '<p class="lab-note" id="labGroupCount" aria-live="polite"></p>'+
     '<div id="labGroupTable"></div></section>'+
     '<div class="lab-note">Market و سطح تجمیع انتخاب‌شده مرجع این آزمون هستند. فیلترهای Brand و SKU '+
-    'برای انتخاب Recipe عمومیِ آزمون اعمال نمی‌شوند. در داده کوتاه‌تر از حد لازم، هیچ ادعای بهبود مستقل ثبت نمی‌شود.</div>';
+    'برای انتخاب Recipe عمومیِ آزمون اعمال نمی‌شوند. در داده کوتاه‌تر از حد لازم، هیچ ادعای بهبود مستقل ثبت نمی‌شود. حداقل ۲۱ دوره برای یک مبدأ کامل لازم است.</div>';
   el('labMetricView').value=metrics[0]||'';
   el('labHorizonView').value='1';
   el('labMetricView').onchange=labGroupLevels;
@@ -1096,7 +1097,7 @@ el('runBacktest').onclick=async()=>{
   try{
     lockButtons(true);
     status('در حال آموزش و مقایسه مدل‌ها روی داده‌های تاریخی؛ این آزمون ممکن است از پیش‌بینی عادی طولانی‌تر باشد.','working');
-    timer=setInterval(()=>status('در حال اجرای Rolling Backtest و آزمون مستقل… '+persian(Math.floor((Date.now()-begin)/1000))+' ثانیه','working'),1000);
+    timer=setInterval(()=>status('در حال اجرای Nested Walk-Forward و آزمون مستقل… '+persian(Math.floor((Date.now()-begin)/1000))+' ثانیه','working'),1000);
     const result=await post('/api/backtest',{
       market:filters.Market||null,
       grain:filters['Element Caption']||filters.ElementCaption||null,
