@@ -20,6 +20,8 @@ class FakeDataset:
         self.months=[str(x) for x in pd.period_range('2023-01',periods=36,freq='M')]
         self.periodicity='monthly'
         self.period_months=1
+        self.volume_unit='kg'
+        self.value_unit='1000 toman'
 
     def all_dimensions(self):
         return ['Market','Subcategory']
