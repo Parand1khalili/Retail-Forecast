@@ -119,17 +119,19 @@ class AdaptiveTests(unittest.TestCase):
             result=engine.fit_models(d,'volume_kg',17,'all',mae_only=True)['scaled_mae']
         options,x,target,weight=fits[0]
         self.assertEqual(options['loss_function'],'MAE')
-        # At origin 16, history of A and B has recent mean 1/6 and .2.
-        # Read expected directly from fixture values, not FeatureBuilder.
-        ix=(x['origin_index']==16)&(x['horizon']==1)&x['Brand'].isin(['A'])
-        observed=x.loc[ix]
-        self.assertEqual(len(observed),2)
-        scales=np.array([(.1+.2+.2)/3,(0+.3+.3)/3])
-        # The second A's recent values are .3,.3,.3 at 14..16.
-        scales[1]=.3
-        expected=np.array([0.,0.])
-        np.testing.assert_allclose(target[ix],expected,atol=1e-12)
+        # Origin 14 -> 15: A1 grows .1 to .2; A2 remains .3.
+        # Three observed recent values are .1 and .3 respectively.
+        ix=(x['origin_index']==14)&(x['horizon']==1)&(x['Brand']=='A')
+        self.assertEqual(int(ix.sum()),2)
+        scales=np.array([.1,.3])
+        np.testing.assert_allclose(target[ix],[1.,0.],atol=1e-12)
         np.testing.assert_allclose(weight[ix]/weight[ix][1],scales/scales[1],rtol=1e-12)
+        # With a controlled normalized prediction .25, native absolute
+        # errors are .075 and .075, despite different normalized errors.
+        native=scales*np.abs(target[ix]-.25)
+        np.testing.assert_allclose(native,[.075,.075],rtol=1e-12)
+        normalized=weight[ix]*np.abs(target[ix]-.25)
+        self.assertAlmostEqual(normalized[0],normalized[1],places=12)
         np.testing.assert_allclose(result[:2],[[.25]*3,[.375]*3],rtol=1e-12)
 
     def test_outer_audit_opt_in_compares_three_policies(self):
