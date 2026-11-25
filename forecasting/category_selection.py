@@ -29,7 +29,7 @@ CATEGORY_FIELDS = ('Subcategory', 'Subcategory2', 'Subcategory3', 'Subcategory4'
 
 
 def category_dimensions(dataset, adaptive=False):
-    """Use mapped category fields only, never arbitrary brand, SKU or geography."""
+    """Stable: three category fields; Adaptive: category, company, brand and city."""
     dims = dataset.all_dimensions()
     cols = []
     fields = CATEGORY_FIELDS + ('Company', 'Brand', 'City') if adaptive else CATEGORY_FIELDS
@@ -136,10 +136,8 @@ def select_category_overrides(dataset, metric, origins, by_origin, global_recipe
                 candidate = _evaluate(components, by_origin, origins, horizon, rows)
                 losses = np.abs(candidate - values).sum(axis=0)
                 gain = (parent_total - float(losses.sum())) / parent_total
-                # Filter EACH challenger for stability before ranking. A low
-                # pooled-error but unstable candidate must not veto a second,
-                # stable challenger. Compare in native units without a fixed
-                # absolute tolerance that changes the result under rescaling.
+                # Filter each challenger before ranking. Stable requires all
+                # origins; Adaptive accepts a predeclared majority.
                 wins = np.count_nonzero(losses < parent_losses)
                 required = ceil(guard.min_winning_origin_fraction * len(origins))
                 if gain <= 0 or gain < guard.min_relative_improvement or wins < required:
