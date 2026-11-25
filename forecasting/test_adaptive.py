@@ -134,6 +134,16 @@ class AdaptiveTests(unittest.TestCase):
         self.assertAlmostEqual(normalized[0],normalized[1],places=12)
         np.testing.assert_allclose(result[:2],[[.25]*3,[.375]*3],rtol=1e-12)
 
+    def test_group_error_aggregates_before_absolute_and_separates_brand_city(self):
+        # Four series: two brands x two cities. A offsets by city, B is exact.
+        meta=np.array([['Tehran','Co','A'],['Shiraz','Co','A'],
+                       ['Tehran','Co','B'],['Shiraz','Co','B']])
+        d=Dataset(meta,np.ones((4,2)),np.ones((4,2)),['2026-01','2026-02'],
+                  'grouped',dimension_names=['City','Company','Brand'])
+        groups=walk_forward_audit.business_group_ids(d)
+        errors=walk_forward_audit.business_absolute_errors(groups,[20,20,20,20],[30,10,20,20])
+        self.assertEqual(errors,{'brand':0.,'city':20.,'brand_city':20.})
+
     def test_outer_audit_opt_in_compares_three_policies(self):
         d=panel()
         def pred(prefix,metric,h,strategy):

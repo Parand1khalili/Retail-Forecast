@@ -43,6 +43,30 @@ def prefix_panel(dataset, origin):
                    months=list(dataset.months[:origin+1])),known
 
 
+def business_group_ids(dataset):
+    """Disjoint group keys within one Market/grain, never combine Market levels."""
+    dims=dataset.all_dimensions()
+    fields={'brand':('Company','Brand'), 'city':('City',),
+            'brand_city':('City','Company','Brand')}
+    groups={}
+    for name,columns in fields.items():
+        required=('City','Brand') if name=='brand_city' else ('Brand',) if name=='brand' else ('City',)
+        if not all(col in dims for col in required):
+            continue
+        cols=[dims.index(col) for col in columns if col in dims]
+        _,ids=np.unique(np.asarray(dataset.meta[:,cols],dtype=str),axis=0,return_inverse=True)
+        groups[name]=ids.reshape(-1)
+    return groups
+
+
+def business_absolute_errors(groups, actual, prediction):
+    # Aggregate signed errors within each group BEFORE taking absolute values.
+    # Over- and under-predictions cancel only within that same business group.
+    diff=np.asarray(prediction,dtype=float)-np.asarray(actual,dtype=float)
+    return {name:float(np.abs(np.bincount(ids,weights=diff)).sum())
+            for name,ids in groups.items()}
+
+
 def run_walk_forward(dataset, metric, count=3, *, include_adaptive=False):
     """Re-run selection and inference at every outer origin; never tune on tests."""
     if metric not in METRICS:
@@ -53,6 +77,7 @@ def run_walk_forward(dataset, metric, count=3, *, include_adaptive=False):
     if len(dataset.report_grain_levels())>1:
         raise ValueError('Select one report grain before running the audit.')
     truth=dataset.metric(metric)
+    business_groups=business_group_ids(dataset)
     rows=[]
     for origin in outer_origins(len(dataset.months),count):
         prefix,known=prefix_panel(dataset,origin)
@@ -79,6 +104,13 @@ def run_walk_forward(dataset, metric, count=3, *, include_adaptive=False):
             for strategy,pred,name,guard,selection,usage in forecasts:
                 stats=error_metrics(actual,pred)
                 market_error=abs(stats['predicted']-stats['actual'])
+                grouped=business_absolute_errors(business_groups,actual,pred)
+                business={}
+                for level in ('brand','city','brand_city'):
+                    error=grouped.get(level)
+                    business[level+'_absolute_error']=error
+                    business[level+'_wape']=(error/stats['actual']
+                        if error is not None and stats['actual']>0 else None)
                 rows.append({'scope':SCOPE,'engine_version':VERSION,'policy_version':POLICY_VERSION,
                     'metric':metric,'periodicity':dataset.periodicity,
                     'strategy':strategy,'origin':dataset.months[origin],
@@ -87,7 +119,7 @@ def run_walk_forward(dataset, metric, count=3, *, include_adaptive=False):
                     'recipe_usage':json.dumps(usage,ensure_ascii=False),
                     'known_series':int(known.sum()),'unobserved_series':int((~known).sum()),
                     'unobserved_actual':float(actual[~known].sum()),
-                    **stats,'market_absolute_error':market_error,
+                    **stats,**business,'market_absolute_error':market_error,
                     'market_ape':market_error/stats['actual'] if stats['actual']>0 else None})
     return rows
 
@@ -105,6 +137,12 @@ def summarize(rows):
             absolute=sum(r['absolute_error'] for r in group)
             market_absolute=sum(r['market_absolute_error'] for r in group)
             cells=sum(r['cells'] for r in group)
+            business={}
+            for level in ('brand','city','brand_city'):
+                errors=[r.get(level+'_absolute_error') for r in group]
+                error=sum(errors) if all(e is not None for e in errors) else None
+                business[level+'_absolute_error']=error
+                business[level+'_wape']=error/actual if error is not None and actual>0 else None
             result.append({'scope':SCOPE,'engine_version':VERSION,'policy_version':POLICY_VERSION,
                 'metric':group[0]['metric'],'periodicity':group[0]['periodicity'],
                 'strategy':strategy,'horizon':h,'origins':len(group),'cells':cells,
@@ -112,7 +150,7 @@ def summarize(rows):
                 'wape':absolute/actual if actual>0 else None,'mae':absolute/cells if cells else None,
                 'bias':(predicted-actual)/actual if actual>0 else None,
                 'market_absolute_error':market_absolute,
-                'market_wape':market_absolute/actual if actual>0 else None,
+                'market_wape':market_absolute/actual if actual>0 else None,**business,
                 'unobserved_actual':sum(r['unobserved_actual'] for r in group),
                 'price_guard_origins':sum(r['price_guard_active'] for r in group)})
     return result
