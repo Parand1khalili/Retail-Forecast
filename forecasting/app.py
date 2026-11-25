@@ -101,7 +101,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.answer({'error':DEPENDENCIES['message'],'dependency_check':DEPENDENCIES},503);return
             import tempfile
             strategy=parse_qs(urlparse(self.path).query).get('strategy',['hierarchical'])[0]
-            if strategy not in ('hierarchical','global'):
+            if strategy not in ('hierarchical','global','adaptive'):
                 self.answer({'error':'روش انتخاب مدل نامعتبر است.'},400);return
             from full_export import export_workbook
             with lock: dataset=state['dataset']

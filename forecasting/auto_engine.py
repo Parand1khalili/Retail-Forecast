@@ -25,7 +25,7 @@ PARAMS=dict(iterations=180,depth=5,learning_rate=.06,l2_leaf_reg=10,
             allow_writing_files=False,has_time=True,one_hot_max_size=32)
 VERSION='global-v8-missing-lags'
 SELECTION_VERSION='robust-price-volume-v3'
-POLICY_VERSION='robust-champion-v11-missing-lags'
+POLICY_VERSION='robust-champion-v12-adaptive-opt-in'
 
 def emit(*args):print(*args,flush=True)
 
@@ -134,11 +134,11 @@ def log_residual_prediction(latest,reference,delta):
     return np.maximum(latest+(latest+reference)*np.expm1(np.clip(delta,-1.5,1.5)),0)
 
 
-def fit_models(d,metric,cutoff,window,predict_only=None):
+def fit_models(d,metric,cutoff,window,predict_only=None,*,mae_only=False):
     start=max(0,cutoff-window+1) if isinstance(window,int) else 0
     if cutoff-start+1<18:return {}
     fingerprint=hashlib.sha256(VERSION.encode()+json.dumps(PARAMS,sort_keys=True).encode()+
-        str((metric,start,cutoff)).encode()+data_identity(d,start,cutoff)).hexdigest()[:20]
+        str((metric,start,cutoff)).encode()+(b'weighted-scaled-mae-v1' if mae_only else b'')+data_identity(d,start,cutoff)).hexdigest()[:20]
     folder=OUT/'cache'/fingerprint;folder.mkdir(parents=True,exist_ok=True)
     cached=folder/'predictions.npz'
     if cached.exists():
@@ -161,11 +161,16 @@ def fit_models(d,metric,cutoff,window,predict_only=None):
     ptarget=np.concatenate(pt);plast=np.concatenate(pl);pw=np.concatenate(priceweights)
     outputs={};predframes=[b.features(last,h) for h in [1,2,3]]
     prediction_log_scale=log_reference_scale(b.y,predframes[0][1])
-    for mode in ['raw','scaled','log','price']:
+    for mode in (['scaled_mae'] if mae_only else ['raw','scaled','log','price']):
         if mode=='price' and metric!='volume_kg':continue
         begun=time.monotonic();valid=np.ones(len(y),dtype=bool);weights=None
         if mode=='raw':response=y-ly
         elif mode=='scaled':response=(y-ly)/scale;weights=np.sqrt(scale)
+        elif mode=='scaled_mae':
+            # scale * abs(normalized residual error) = native absolute error.
+            # Divide all weights by the same positive constant for numerical
+            # conditioning without altering their relative importance.
+            response=(y-ly)/scale;weights=scale/scale.mean()
         elif mode=='log':response=log_residual_target(y,ly,log_scale);weights=np.sqrt(scale)
         else:
             valid=np.isfinite(ptarget)&np.isfinite(plast)&(ptarget>0)&(plast>0)&(pw>0)
@@ -176,6 +181,7 @@ def fit_models(d,metric,cutoff,window,predict_only=None):
             weights[valid]=np.sqrt(pw[valid])
         if not valid.any():continue
         options=dict(PARAMS)
+        if mode=='scaled_mae':options['loss_function']='MAE'
         if np.ptp(response[valid])==0:options['allow_const_label']=True
         model=CatBoostRegressor(**options)
         model.fit(X.loc[valid],response[valid],cat_features=d.all_dimensions(),sample_weight=weights[valid] if weights is not None else None)
@@ -184,7 +190,7 @@ def fit_models(d,metric,cutoff,window,predict_only=None):
         for h,(xp,ps,ever) in enumerate(predframes,1):
             delta=model.predict(xp)
             if mode=='raw':pred=b.y[:,last]+delta
-            elif mode=='scaled':pred=b.y[:,last]+delta*ps
+            elif mode in ('scaled','scaled_mae'):pred=b.y[:,last]+delta*ps
             elif mode=='log':pred=log_residual_prediction(b.y[:,last],prediction_log_scale,delta)
             else:
                 # A learned change requires a positive observed origin price,
@@ -200,7 +206,9 @@ def fit_models(d,metric,cutoff,window,predict_only=None):
         emit('FIT',metric,d.months[cutoff],'history',window,mode,'rows',len(X),'sec',round(time.monotonic()-begun,1))
     np.savez_compressed(cached,**outputs)
     (folder/'audit.json').write_text(json.dumps({'metric':metric,'input_start':d.months[start],'input_end':d.months[cutoff],
-        'max_training_target':d.months[cutoff],'rows':len(X),'parameters':PARAMS,
+        'max_training_target':d.months[cutoff],'rows':len(X),
+        'parameters':dict(PARAMS,loss_function='MAE') if mae_only else PARAMS,
+        'scaled_mae_only':mae_only,
         'log_residual':{'reference':'max(scale,last_positive_sale)','clip':[-1.5,1.5],
                         'weight':'sqrt(scale)','bias_adjustment':False}},indent=2),encoding='utf-8')
     return outputs
@@ -238,7 +246,7 @@ def base_candidates(d,metric,cutoff):
                 out[key][:,h-1]=pred
     return out
 
-def candidates(d,metric,cutoff):
+def candidates(d,metric,cutoff,*,adaptive=False):
     out=base_candidates(d,metric,cutoff)
     for window in [24,'all']:
         fitted=fit_models(d,metric,cutoff,window)
@@ -252,6 +260,9 @@ def candidates(d,metric,cutoff):
                 for vm in ['Last month','Mean 2']:
                     v=baseline(d.volume[:,:cutoff+1],vm,1)
                     out[f'price-volume|{vm}|{window}']=volumes['price']*v[:,None]
+    if adaptive:
+        mae=fit_models(d,metric,cutoff,'all',mae_only=True)
+        if 'scaled_mae' in mae:out['ml|scaled_mae|all']=mae['scaled_mae']
     return out
 
 def group(y,meta,level):
@@ -270,7 +281,7 @@ def select_recipes(d,metric,origins,by_origin,selection_mode='guarded',guard=Cha
     Candidate training and feature construction end at each historical origin.
     Guarded selection prefers stable gains; legacy reproduces pooled-WAPE ranking.
     """
-    if selection_mode not in ('guarded','legacy'):
+    if selection_mode not in ('guarded','legacy','minimum_wape'):
         raise ValueError('Unknown model selection mode.')
     if not origins:raise ValueError('At least one completed validation origin is required.')
     common,rejected=eligible_candidates(by_origin,origins,metric,d.periodicity,len(d.meta))
@@ -305,9 +316,10 @@ def select_recipes(d,metric,origins,by_origin,selection_mode='guarded',guard=Cha
                                                         else row['wape'],row['name']))
         losses={name:np.abs(pred-actual).sum(axis=0) for name,pred in pp.items()}
         guarded_winner,decision=choose_champion(losses,bestbase,guard)
-        winner=decision['legacy_best'] if selection_mode=='legacy' else guarded_winner
+        winner=decision['legacy_best'] if selection_mode in ('legacy','minimum_wape') else guarded_winner
         decision={**decision,'selected':winner,'mode':selection_mode,
-                  'reason':('legacy pooled WAPE winner' if selection_mode=='legacy' else decision['reason'])}
+                  'reason':('minimum pooled WAPE' if selection_mode=='minimum_wape' else
+                             'legacy pooled WAPE winner' if selection_mode=='legacy' else decision['reason'])}
         by_month=[]
         for o in origins:
             observed=group(truth[:,o+h:o+h+1],d.meta,'city_segment')
@@ -376,7 +388,9 @@ def forecast_component(d,metric,cutoff,name):
     parts=name.split('|')
     if parts[0] in ['base','light','price-trend']:return base_candidates(d,metric,cutoff)[name]
     window=int(parts[2]) if parts[2]!='all' else 'all'
-    if parts[0]=='ml':return fit_models(d,metric,cutoff,window)[parts[1]]
+    if parts[0]=='ml':
+        if parts[1]=='scaled_mae':return fit_models(d,metric,cutoff,window,mae_only=True)[parts[1]]
+        return fit_models(d,metric,cutoff,window)[parts[1]]
     v=fit_models(d,'volume_kg',cutoff,window)
     vol=v[parts[1]] if parts[1] in ['raw','scaled','log'] else baseline(d.volume[:,:cutoff+1],parts[1],1)[:,None]
     return v['price']*vol
@@ -389,11 +403,14 @@ def _selection_origins(d,cutoff,strategy):
 
 def dataset_policy(d,metric,cutoff,strategy='hierarchical'):
     """Select recipes exclusively on completed historical target observations."""
-    if strategy not in ('hierarchical','global'):
-        raise ValueError('روش انتخاب مدل باید سلسله‌مراتبی یا Global باشد.')
-    configuration=rolling_plan(cutoff,strategy,categories_available=bool(category_dimensions(d)))
+    if strategy not in ('hierarchical','global','adaptive'):
+        raise ValueError('روش انتخاب مدل باید معتبر باشد.')
+    adaptive=strategy=='adaptive'
+    dimensions=category_dimensions(d,adaptive=adaptive)
+    configuration=rolling_plan(cutoff,'hierarchical' if adaptive else strategy,categories_available=bool(dimensions))
     champion_guard=ChampionGuard()
-    category_guard=CategoryGuard()
+    category_guard=(CategoryGuard(min_relative_improvement=.01,min_winning_origin_fraction=2/3)
+                    if adaptive else CategoryGuard())
     # The key must identify the actual model and selection configuration.
     # Use these same guard instances below instead of independent defaults.
     settings={'backtest':configuration['configuration'],'model':PARAMS,
@@ -405,8 +422,8 @@ def dataset_policy(d,metric,cutoff,strategy='hierarchical'):
     cached=OUT/'runtime_policies'/f'{digest}.json';cached.parent.mkdir(exist_ok=True)
     if cached.exists():return json.loads(cached.read_text(encoding='utf-8'))
     origins,holdout=configuration['selection'],configuration['holdout']
-    by_origin={o:candidates(d,metric,o) for o in origins}
-    mode='guarded' if holdout is not None else 'legacy'
+    by_origin={o:(candidates(d,metric,o,adaptive=True) if adaptive else candidates(d,metric,o)) for o in origins}
+    mode='minimum_wape' if adaptive else ('guarded' if holdout is not None else 'legacy')
     policy,_=select_recipes(d,metric,origins,by_origin,selection_mode=mode,guard=champion_guard)
     # The previous Global policy is computed on identical selection observations,
     # without training any additional candidate model.
@@ -418,14 +435,14 @@ def dataset_policy(d,metric,cutoff,strategy='hierarchical'):
                                for h in ('1','2','3')} if legacy_policy is not None else None
     policy['_selection_origins']=[d.months[o] for o in origins]
     policy['_strategy']=strategy
-    policy['_hierarchy']={'dimensions':category_dimensions(d),'overrides':{},
+    policy['_hierarchy']={'dimensions':dimensions,'overrides':{},
                           'groups_considered':0,'groups_selected':0}
     policy['_holdout']=None
     if holdout is not None:
-        hierarchy=select_category_overrides(d,metric,origins,by_origin,policy,guard=category_guard)
+        hierarchy=select_category_overrides(d,metric,origins,by_origin,policy,guard=category_guard,adaptive=adaptive)
         policy['_hierarchy']=hierarchy
         # Independent audit is REPORT-ONLY: never gate or tune policies on it.
-        held=candidates(d,metric,holdout)
+        held=candidates(d,metric,holdout,adaptive=True) if adaptive else candidates(d,metric,holdout)
         policy['_holdout']=holdout_comparison(d,metric,holdout,held,policy,hierarchy,
                                                legacy_recipes=legacy_policy)
     policy['_validation']={'mode':mode,'selection_origins':policy['_selection_origins'],
@@ -450,7 +467,7 @@ def automatic_forecast(d,metric,horizon,cutoff=None,strategy='hierarchical'):
     if len(d.report_grain_levels()) > 1:
         raise ValueError('ابتدا سطح Element Caption را انتخاب کنید؛ سطوح SKU و Product نباید با هم ترکیب شوند.')
     cutoff=len(d.months)-1 if cutoff is None else cutoff
-    if strategy not in ('hierarchical','global'):
+    if strategy not in ('hierarchical','global','adaptive'):
         raise ValueError('روش انتخاب مدل نامعتبر است.')
     if metric=='value_1000_toman':
         guarded,guard=guarded_money(d,cutoff)
@@ -472,7 +489,7 @@ def automatic_forecast(d,metric,horizon,cutoff=None,strategy='hierarchical'):
     policy=dataset_policy(d,metric,cutoff,strategy)
     selected=policy[str(horizon)]
     hierarchy=policy['_hierarchy']
-    recipes=series_recipes(d,selected,hierarchy,horizon) if strategy=='hierarchical' else [selected]*len(d.meta)
+    recipes=series_recipes(d,selected,hierarchy,horizon) if strategy in ('hierarchical','adaptive') else [selected]*len(d.meta)
     unique={r['name']:r for r in recipes}
     # The same global candidates are used for all category branches.
     necessary={component for item in unique.values() for component,_ in item['components']}
@@ -480,7 +497,7 @@ def automatic_forecast(d,metric,horizon,cutoff=None,strategy='hierarchical'):
     output,usage,_=forecast_with_recipes(d,horizon,predictions,selected,hierarchy,strategy)
     recipe=dict(selected)
     recipe['category_selection']={
-        'strategy':strategy,'active':bool(hierarchy.get('overrides',{}).get(str(horizon))) and strategy=='hierarchical',
+        'strategy':strategy,'active':bool(hierarchy.get('overrides',{}).get(str(horizon))) and strategy in ('hierarchical','adaptive'),
         'dimensions':hierarchy.get('dimensions',[]),
         'groups_considered':hierarchy.get('groups_considered',0),
         'groups_selected':len(hierarchy.get('overrides',{}).get(str(horizon),[])),
@@ -537,13 +554,14 @@ def future_request(d,request):
     strategy=request.get('strategy','hierarchical')
     cells,recipe=automatic_forecast(d,metric,horizon,strategy=strategy)
     category_summary=_selected_category_explanation(d,metric,horizon,mask,strategy,recipe)
-    if (category_summary and strategy=='hierarchical'
+    if (category_summary and strategy in ('hierarchical','adaptive')
             and category_summary.get('holdout_origin')):
         # The selected series receive their own OUT-OF-SAMPLE error metrics.
         # This does not influence model selection or recipe thresholds.
         historical_policy=dataset_policy(d,metric,len(d.months)-1,strategy)
         holdout_index=d.months.index(category_summary['holdout_origin'])
-        held_candidates=candidates(d,metric,holdout_index)
+        held_candidates=(candidates(d,metric,holdout_index,adaptive=True) if strategy=='adaptive'
+                         else candidates(d,metric,holdout_index))
         category_summary['selected_filter_holdout']=filtered_holdout_summary(
             d,metric,mask,horizon,holdout_index,held_candidates,
             historical_policy[str(horizon)],historical_policy['_hierarchy'])

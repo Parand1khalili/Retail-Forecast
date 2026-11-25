@@ -83,7 +83,7 @@ def _modelled_rows(dataset, strategy='hierarchical'):
                     # Default call keeps previous clients and test mocks compatible.
                     forecast, _ = (automatic_forecast(selected, metric, horizon)
                                    if strategy == 'hierarchical' else
-                                   automatic_forecast(selected, metric, horizon, strategy='global'))
+                                   automatic_forecast(selected, metric, horizon, strategy=strategy))
                     forecast=np.asarray(forecast,dtype=float)
                     if forecast.shape != (len(rows),):
                         raise ValueError('Unexpected forecast vector shape.')
@@ -98,7 +98,7 @@ def export_workbook(dataset, filename, strategy='hierarchical'):
     import numpy as np
     from pandas import Period
 
-    if strategy not in ('global','hierarchical'):
+    if strategy not in ('global','hierarchical','adaptive'):
         raise ValueError('روش انتخاب مدل نامعتبر است.')
     if len(dataset.months) < 2:
         raise ValueError('دست‌کم دو دوره معتبر برای پیش‌بینی لازم است.')

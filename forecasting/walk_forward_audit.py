@@ -43,7 +43,7 @@ def prefix_panel(dataset, origin):
                    months=list(dataset.months[:origin+1])),known
 
 
-def run_walk_forward(dataset, metric, count=3):
+def run_walk_forward(dataset, metric, count=3, *, include_adaptive=False):
     """Re-run selection and inference at every outer origin; never tune on tests."""
     if metric not in METRICS:
         raise ValueError('Unknown sales metric.')
@@ -58,7 +58,7 @@ def run_walk_forward(dataset, metric, count=3):
         prefix,known=prefix_panel(dataset,origin)
         for h in (1,2,3):
             forecasts=[]
-            for strategy in STRATEGIES:
+            for strategy in (*STRATEGIES,'adaptive') if include_adaptive else STRATEGIES:
                 # This is the live entry point, not a locked Recipe or a
                 # reimplementation of the Global/Hierarchical algorithms.
                 prediction,recipe=automatic_forecast(prefix,metric,h,strategy=strategy)
@@ -95,7 +95,7 @@ def run_walk_forward(dataset, metric, count=3):
 def summarize(rows):
     """Pool numerators and denominators, not averages of percentage errors."""
     result=[]
-    for strategy in (*STRATEGIES,'last_observation'):
+    for strategy in (*STRATEGIES,'adaptive','last_observation'):
         for h in (1,2,3):
             group=[r for r in rows if r['strategy']==strategy and r['horizon']==h]
             if not group:
@@ -135,11 +135,12 @@ def main():
     parser.add_argument('--grain',help='One Element Caption reporting grain when required')
     parser.add_argument('--metric',choices=METRICS,default='volume_kg')
     parser.add_argument('--origins',type=int,choices=range(2,7),default=3)
+    parser.add_argument('--adaptive',action='store_true',help='Compare experimental brand/city and MAE policy against stable policies.')
     parser.add_argument('--output',type=Path,default=Path('outputs/live_policy_walk_forward.csv'))
     args=parser.parse_args()
     dataset=Dataset.file(args.workbook,{'periodicity':args.periodicity})
     dataset=dataset.for_market(args.market).for_grain(args.grain)
-    rows=run_walk_forward(dataset,args.metric,args.origins)
+    rows=run_walk_forward(dataset,args.metric,args.origins,include_adaptive=args.adaptive)
     summary_path=args.output.with_name(args.output.stem+'_summary.csv')
     write_csv(args.output,rows)
     write_csv(summary_path,summarize(rows))

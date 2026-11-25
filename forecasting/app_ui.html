@@ -300,8 +300,9 @@ input[type=text]:focus,select:focus{border-color:var(--focus)}
 <div class="stage-actions"><button id="nextFilters" class="btn" type="button">ادامه: انتخاب ماه</button><button id="backFilters" class="btn secondary" type="button">بازگشت به ستون‌ها</button></div></section>
 <section class="wizard-stage" data-panel="3" hidden><div class="stage-heading"><span class="stage-num">04</span><h2>تنظیم و اجرای پیش‌بینی</h2></div><p class="stage-lead">دوره موردنظر را انتخاب کنید؛ موتور به‌طور خودکار روش‌ها را ارزیابی می‌کند و مدل نهایی را می‌سازد.</p><p class="help" id="latestMonth"></p><div class="field"><label for="horizon">دوره مقصدِ بدون داده</label><select id="horizon"></select></div><div class="field"><label for="selectionStrategy">روش انتخاب Recipe</label>
 <select id="selectionStrategy"><option value="hierarchical">چندسطحی؛ با fallback به Market</option>
-<option value="global">فقط Global Market (مقایسه با روش قبلی)</option></select>
-<p class="help">CatBoost همچنان روی داده‌های کل Market آموزش می‌بیند؛ در حالت چندسطحی، Recipe برای شاخه‌های دارای شواهد کافی جدا انتخاب می‌شود.</p></div>
+<option value="global">فقط Global Market (مقایسه با روش قبلی)</option>
+<option value="adaptive">Adaptive آزمایشی؛ دسته‌بندی، برند و شهر</option></select>
+<p class="help">CatBoost روی کل Market آموزش می‌بیند. Adaptive آزمایشی تا چهار Subcategory، کمپانی، برند و شهر را بررسی می‌کند و Candidate با MAE وزن‌دار دارد؛ Model Lab فعلی نسخه پایدار را گزارش می‌کند.</p></div>
 <div class="model-lab-intro"><strong>آزمایش مقایسه‌ای مدل‌ها (Model Lab)</strong>
 <p>در این آزمون هر سه روش Legacy Global، Guarded Global و Hierarchical روی یک Holdout تاریخی یکسان مقایسه می‌شوند. آزمون برای کل Market و سطح تجمیع انتخاب‌شده انجام می‌شود؛ فیلترهای برند و SKU فقط در پیش‌بینی عادی کاربرد دارند.</p>
 <div class="field"><label for="backtestMetric">شاخص‌های قابل‌آزمایش</label><select id="backtestMetric">
@@ -442,7 +443,7 @@ function updateRunSummary(){
   const parts=[sourceMode==='sample'?'داده نمونه':data.source,data.periodicity==='bimonthly'?'دوماهه':'ماهانه',el('metric').selectedOptions?.[0]?.textContent||'فروش حجمی',target,
     Object.entries(filters).map(([key,val])=>labels[dimNames.indexOf(key)]+': '+val).join('، ')||'تمام دسته‌بندی‌ها',
     persian(selectedCount)+' سری موجود',
-    el('selectionStrategy').value==='global'?'انتخاب Global-only':'انتخاب چندسطحی'];
+    el('selectionStrategy').value==='global'?'انتخاب Global-only':el('selectionStrategy').value==='adaptive'?'Adaptive آزمایشی':'انتخاب چندسطحی'];
   el('runSummaryText').textContent=parts.join('  ·  ');
 }
 const choice=(node,values,selected)=>{node.replaceChildren();for(const [value,name] of values){let o=document.createElement('option');o.value=value;o.textContent=name;node.append(o)}if(values.some(x=>x[0]===selected))node.value=selected};
@@ -700,7 +701,7 @@ function chart(result){
 function recipeComponent(name){
   const parts=String(name||'').split('|');
   const windows=w=>w==='all'?'تمام تاریخچه':/^\d+$/.test(w||'')?persian(Number(w))+' ماه':'';
-  const kinds={raw:'تغییر مطلق فروش',scaled:'تغییر مقیاس‌بندی‌شده فروش',log:'تغییر لگاریتمی فروش'};
+  const kinds={raw:'تغییر مطلق فروش',scaled:'تغییر مقیاس‌بندی‌شده فروش',scaled_mae:'تغییر مقیاس‌بندی‌شده فروش (MAE وزن‌دار)',log:'تغییر لگاریتمی فروش'};
   const light={last:'آخرین ماه',mean2:'میانگین ۲ ماه',mean3:'میانگین ۳ ماه',seasonal12:'ماه مشابه سال قبل','ses0.2':'هموارسازی نمایی ۰٫۲','ses0.5':'هموارسازی نمایی ۰٫۵','ses0.8':'هموارسازی نمایی ۰٫۸',croston_sba:'Croston-SBA',equal_blend:'ترکیب مساوی روش‌های سبک',price_volume_last:'حجم آخر × روند قیمت',price_volume_mean2:'میانگین حجم ۲ ماه × روند قیمت'};
   if(parts[0]==='ml')return {label:'CatBoost — '+(kinds[parts[1]]||parts[1]),window:windows(parts[2])};
   if(parts[0]==='price-volume')return {label:'CatBoost قیمت × حجم ('+(kinds[parts[1]]||parts[1])+')',window:windows(parts[2])};
@@ -809,7 +810,7 @@ function selectionEvidenceHtml(r){
 function categorySelectionHtml(r){
   const info=r.category_selection;
   if(!info)return '';
-  const strategy=info.strategy==='global'?'Global-only':'چندسطحی با fallback';
+  const strategy=info.strategy==='global'?'Global-only':info.strategy==='adaptive'?'Adaptive آزمایشی':'چندسطحی با fallback';
   const global='<div class="detail"><strong>سطح مبنا</strong><span>Market: '+escapeHtml(r.filters?.Market||'مجموعه حاضر')+
     ' · '+escapeHtml(strategy)+'</span></div>';
   const origins=Array.isArray(info.selection_origins)?info.selection_origins.join('، '):'ثبت نشده';

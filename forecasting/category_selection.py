@@ -7,6 +7,7 @@ never uses the independent holdout to tune or select recipes.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from math import ceil
 import numpy as np
 from benchmark_levels import compare_levels, summarize_levels
 
@@ -20,27 +21,29 @@ class CategoryGuard:
     min_effective_series: float = 3.0
     min_relative_improvement: float = 0.05
     max_single_series_share: float = 0.65
+    min_winning_origin_fraction: float = 1.0
 
 
 PLACEHOLDERS = {'', 'all', 'not specified', 'not available', 'none', 'nan', '-', '—', 'نامشخص'}
 CATEGORY_FIELDS = ('Subcategory', 'Subcategory2', 'Subcategory3', 'Subcategory4')
 
 
-def category_dimensions(dataset):
+def category_dimensions(dataset, adaptive=False):
     """Use mapped category fields only, never arbitrary brand, SKU or geography."""
     dims = dataset.all_dimensions()
     cols = []
-    for name in CATEGORY_FIELDS:
+    fields = CATEGORY_FIELDS + ('Company', 'Brand', 'City') if adaptive else CATEGORY_FIELDS
+    for name in fields:
         if name in dims:
             index = dims.index(name)
             if any(str(v).strip().casefold() not in PLACEHOLDERS for v in dataset.meta[:, index]):
                 cols.append(name)
-        if len(cols) == 3:
+        if not adaptive and len(cols) == 3:
             break
     return cols
 
 
-def _groups(dataset, columns):
+def _groups(dataset, columns, allow_missing=False):
     dims = dataset.all_dimensions()
     indices = [dims.index(c) for c in columns]
     grouped = {}
@@ -49,7 +52,11 @@ def _groups(dataset, columns):
         for col in indices:
             value = str(row[col]).strip()
             if value.casefold() in PLACEHOLDERS:
-                break
+                if not allow_missing:
+                    break
+                # Keep the prefix position; known brand/city can still be
+                # evaluated beneath an explicitly unclassified category.
+                value = 'Not specified'
             path.append(value)
             grouped.setdefault(tuple(path), []).append(index)
     return {key: np.asarray(indexes, dtype=int) for key, indexes in grouped.items()}
@@ -78,10 +85,10 @@ def _evaluate(components, by_origin, origins, horizon, rows):
 
 
 def select_category_overrides(dataset, metric, origins, by_origin, global_recipes,
-                              guard=CategoryGuard()):
-    """Promote category recipes only when every selection origin improves."""
-    columns = category_dimensions(dataset)
-    policy = {'dimensions': columns, 'guard': asdict(guard),
+                              guard=CategoryGuard(), *, adaptive=False):
+    """Promote a lower pooled-error recipe with predeclared evidence rules."""
+    columns = category_dimensions(dataset, adaptive=adaptive)
+    policy = {'dimensions': columns, 'guard': asdict(guard), 'allow_missing': adaptive,
               'origins': [dataset.months[o] for o in origins],
               'overrides': {}, 'groups_considered': 0, 'groups_selected': 0,
               'selection_note': 'Overrides require positive, stable gains across multiple origins.'}
@@ -90,7 +97,7 @@ def select_category_overrides(dataset, metric, origins, by_origin, global_recipe
     dims = dataset.all_dimensions()
     if 'Market' in dims and len(set(dataset.meta[:, dims.index('Market')])) > 1:
         raise ValueError('Category selection requires exactly one geographic Market level.')
-    groups = _groups(dataset, columns)
+    groups = _groups(dataset, columns, allow_missing=adaptive)
     actual_series = dataset.metric(metric)
     for horizon in (1, 2, 3):
         entry = global_recipes[str(horizon)]
@@ -133,7 +140,9 @@ def select_category_overrides(dataset, metric, origins, by_origin, global_recipe
                 # pooled-error but unstable candidate must not veto a second,
                 # stable challenger. Compare in native units without a fixed
                 # absolute tolerance that changes the result under rescaling.
-                if gain < guard.min_relative_improvement or not np.all(losses < parent_losses):
+                wins = np.count_nonzero(losses < parent_losses)
+                required = ceil(guard.min_winning_origin_fraction * len(origins))
+                if gain <= 0 or gain < guard.min_relative_improvement or wins < required:
                     continue
                 if best_losses is None or (float(losses.sum()), name) < (float(best_losses.sum()), best_name):
                     best_name, best_losses, best_prediction = name, losses, candidate
@@ -163,7 +172,7 @@ def series_recipes(dataset, global_recipe, hierarchy, horizon):
     columns = hierarchy.get('dimensions', [])
     if not columns:
         return recipes
-    groups = _groups(dataset, columns)
+    groups = _groups(dataset, columns, allow_missing=hierarchy.get('allow_missing', False))
     for node in sorted(hierarchy.get('overrides', {}).get(str(horizon), []),
                        key=lambda item: item['depth']):
         for i in groups.get(tuple(node['path']), ()):
@@ -175,7 +184,7 @@ def forecast_with_recipes(dataset, horizon, components, global_recipe, hierarchy
                           strategy='hierarchical'):
     """Apply cached candidate vectors without training additional group models."""
     recipes = (series_recipes(dataset, global_recipe, hierarchy, horizon)
-               if strategy == 'hierarchical' else [global_recipe] * len(dataset.meta))
+               if strategy in ('hierarchical', 'adaptive') else [global_recipe] * len(dataset.meta))
     output = np.empty(len(dataset.meta), dtype=float)
     usage = {}
     distinct = {recipe['name']: recipe for recipe in recipes}
@@ -219,7 +228,8 @@ def holdout_comparison(dataset, metric, holdout_origin, candidates_at_holdout,
         legacy_stats = _stats(actual, legacy_prediction)
         level_rows=compare_levels(dataset,actual,baseline,proposed,holdout_origin,
                                   legacy=legacy_prediction,include_series=False)
-        branches = _groups(dataset, hierarchy.get('dimensions', [])[:1]) if hierarchy.get('dimensions') else {}
+        branches = _groups(dataset, hierarchy.get('dimensions', [])[:1],
+                           allow_missing=hierarchy.get('allow_missing',False)) if hierarchy.get('dimensions') else {}
         improved = deteriorated = unchanged = 0
         for rows in branches.values():
             before = np.abs(baseline[rows] - actual[rows]).sum()
